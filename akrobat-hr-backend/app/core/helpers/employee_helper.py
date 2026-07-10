@@ -1,0 +1,238 @@
+import random
+
+from app.core.database import supabase_admin
+from app.core.exceptions import (
+    bad_request,
+    conflict,
+    not_found,
+)
+from app.core.constants import *
+
+ALLOWED_DOMAIN = "akrobat.com.sg"
+
+
+# ==========================================
+# GENERATE EMPLOYEE ID
+# ==========================================
+
+
+def generate_employee_id() -> str:
+
+    while True:
+
+        employee_id = f"AKR-{random.randint(10000,99999)}"
+
+        response = (
+            supabase_admin.table("employees")
+            .select("id")
+            .eq("employee_id", employee_id)
+            .execute()
+        )
+
+        if not response.data:
+            return employee_id
+
+
+# ==========================================
+# VALIDATE COMPANY EMAIL
+# ==========================================
+
+
+def validate_company_email(email: str):
+
+    if not email:
+        bad_request("Email is required.")
+
+    if not email.lower().endswith(f"@{ALLOWED_DOMAIN}"):
+        bad_request(f"Only @{ALLOWED_DOMAIN} email is allowed.")
+
+
+# ==========================================
+# CHECK EMAIL EXISTS
+# ==========================================
+
+
+def check_email_exists(email: str, exclude_employee_id: str | None = None):
+
+    query = supabase_admin.table("employees").select("id").eq("email", email)
+
+    if exclude_employee_id:
+        query = query.neq("id", exclude_employee_id)
+
+    response = query.execute()
+
+    if response.data:
+        conflict("Email already exists.")
+
+
+# ==========================================
+# VALIDATE FOREIGN KEY
+# ==========================================
+
+
+def validate_reference(
+    table_name: str,
+    record_id: str | None,
+    field_name: str,
+):
+
+    if not record_id:
+        return
+
+    response = (
+        supabase_admin.table(table_name).select("id").eq("id", record_id).execute()
+    )
+
+    if not response.data:
+        not_found(f"{field_name} not found.")
+
+
+# ==========================================
+# GET EMPLOYEE
+# ==========================================
+
+
+def get_employee_or_404(employee_id: str):
+
+    response = (
+        supabase_admin.table("employees")
+        .select("*")
+        .eq("id", employee_id)
+        .single()
+        .execute()
+    )
+
+    if not response.data:
+        not_found("Employee not found.")
+
+    return response.data
+
+
+# ==========================================
+# GET EMPLOYEE ID FOR AUTH USER
+# ==========================================
+
+
+def get_employee_id_for_auth_user(auth_user_id: str) -> str | None:
+    """
+    Reverse lookup of get_user_profile: given the Supabase auth user id
+    (what `get_current_user` returns as `user.id`), find the employee_id
+    it's linked to. Used for self-service endpoints (e.g. "my payroll",
+    "my documents") and for ownership checks — is this record the
+    caller's own, regardless of what role/permission they hold.
+    """
+
+    response = (
+        supabase_admin.table("user_profiles")
+        .select("employee_id")
+        .eq("auth_user_id", auth_user_id)
+        .maybe_single()
+        .execute()
+    )
+
+    if not response or not response.data:
+        return None
+
+    return response.data.get("employee_id")
+
+
+# ==========================================
+# GET USER PROFILE
+# ==========================================
+
+
+# ==========================================
+# MANAGER HIERARCHY (direct + indirect reports)
+# ==========================================
+
+
+def get_manager_chain(employee_id: str, max_depth: int = 10) -> list[str]:
+    """
+    Walks up `employees.manager_id` starting from `employee_id`, returning
+    the ids of every manager above them (direct manager first). Stops at
+    the top of the org chart or after `max_depth` hops (guards against a
+    bad/circular manager_id causing an infinite loop).
+
+    Used for ownership checks like "is this caller the direct or indirect
+    manager of this employee" — e.g. leave/overtime approval — without
+    hardcoding a role check.
+    """
+
+    chain: list[str] = []
+    current_id = employee_id
+
+    for _ in range(max_depth):
+        response = (
+            supabase_admin.table("employees")
+            .select("manager_id")
+            .eq("id", current_id)
+            .maybe_single()
+            .execute()
+        )
+
+        if not response or not response.data:
+            break
+
+        manager_id = response.data.get("manager_id")
+
+        if not manager_id or manager_id in chain:
+            break
+
+        chain.append(manager_id)
+        current_id = manager_id
+
+    return chain
+
+
+def is_manager_of(manager_employee_id: str | None, employee_id: str | None) -> bool:
+    """True if manager_employee_id is the direct or indirect manager of employee_id."""
+
+    if not manager_employee_id or not employee_id:
+        return False
+
+    return manager_employee_id in get_manager_chain(employee_id)
+
+
+def get_all_report_ids(manager_employee_id: str, max_depth: int = 10) -> list[str]:
+    """
+    Returns the ids of every direct + indirect report of manager_employee_id
+    (i.e. every employee whose manager chain includes manager_employee_id),
+    via breadth-first traversal down the org chart.
+    """
+
+    all_report_ids: set[str] = set()
+    frontier = [manager_employee_id]
+
+    for _ in range(max_depth):
+        if not frontier:
+            break
+
+        response = (
+            supabase_admin.table("employees")
+            .select("id")
+            .in_("manager_id", frontier)
+            .execute()
+        )
+
+        rows = response.data or []
+        new_ids = [row["id"] for row in rows if row["id"] not in all_report_ids]
+
+        if not new_ids:
+            break
+
+        all_report_ids.update(new_ids)
+        frontier = new_ids
+
+    return list(all_report_ids)
+
+
+def get_user_profile(employee_id: str):
+
+    response = (
+        supabase_admin.table("user_profiles")
+        .select("*")
+        .eq("employee_id", employee_id)
+        .execute()
+    )
+
+    return response.data[0] if response.data else None

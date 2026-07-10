@@ -1,0 +1,23 @@
+ACTIVE = "Active"
+
+INACTIVE = "Inactive"
+
+PENDING = "Pending"
+
+APPROVED = "Approved"
+
+REJECTED = "Rejected"
+
+PRESENT = "Present"
+
+ABSENT = "Absent"
+
+CHECKED_IN = "CHECKED_IN"
+
+CHECKED_OUT = "CHECKED_OUT"
+
+ADMIN = "SUPER ADMIN"
+
+HR = "HR ADMIN"
+
+EMPLOYEE = "EMPLOYEE"
