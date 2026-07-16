@@ -4,9 +4,9 @@
 const COLOR_MAP = {
   orange: "bg-orange-50 text-orange-600",
   blue: "bg-blue-50 text-blue-600",
-  green: "bg-emerald-50 text-emerald-600",
-  red: "bg-red-50 text-red-600",
-  purple: "bg-purple-50 text-purple-600",
+  green: "bg-blue-50 text-blue-600",
+  red: "bg-orange-50 text-orange-600",
+  purple: "bg-blue-50 text-blue-600",
   slate: "bg-slate-100 text-slate-600",
 };
 
@@ -43,7 +43,7 @@ export default function StatCard({
 
       {trend && !loading && (
         <div
-          className={`text-xs font-medium ${trend.direction === "up" ? "text-emerald-600" : "text-red-500"}`}
+          className={`text-xs font-medium ${trend.direction === "up" ? "text-blue-600" : "text-orange-500"}`}
         >
           {trend.direction === "up" ? "↑" : "↓"} {trend.value}{" "}
           <span className="text-slate-400 font-normal">{trend.label}</span>

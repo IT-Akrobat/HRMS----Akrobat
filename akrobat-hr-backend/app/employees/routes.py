@@ -29,18 +29,15 @@ router = APIRouter(
 # CREATE EMPLOYEE
 # ==========================================
 #
-# Who can call this: ONLY SUPER ADMIN or HR ADMIN — a hard role check,
-# not the data-driven CREATE_EMPLOYEE permission (HR EXECUTIVE also holds
-# CREATE_EMPLOYEE in sql/002_role_permissions_seed.sql; that permission
-# still governs other things HR EXECUTIVE can do, but not this endpoint).
+# Who can call this: ONLY SUPER ADMIN or HR — a hard role check, not the
+# data-driven CREATE_EMPLOYEE permission.
 #
 # The Owner (the one fixed SUPER ADMIN login bootstrapped via
 # scripts/create_super_admin.py) uses this endpoint to create further
-# SUPER ADMIN and HR ADMIN accounts. Both SUPER ADMIN and HR ADMIN can
-# then create a user of ANY role — there is no per-role restriction
-# beyond "caller must be SUPER ADMIN or HR ADMIN". Which role gets
-# created is just `role_id` in the body — there is no separate endpoint
-# per role.
+# SUPER ADMIN and HR accounts. Both SUPER ADMIN and HR can then create a
+# user of ANY role — there is no per-role restriction beyond "caller
+# must be SUPER ADMIN or HR". Which role gets created is just `role_id`
+# in the body — there is no separate endpoint per role.
 #
 # Use the "Try it out" -> "Example" dropdown below in Swagger to load a
 # ready-made payload for each role (department_id/designation_id are
@@ -54,7 +51,7 @@ router = APIRouter(
 def create_employee_route(
     request: Request,
     data: EmployeeCreate = Body(..., openapi_examples=CREATE_EMPLOYEE_EXAMPLES),
-    user=Depends(require_role(["SUPER ADMIN", "HR ADMIN"])),
+    user=Depends(require_role(["SUPER ADMIN", "HR"])),
 ):
     return create_employee(data, current_user=user, request=request)
 

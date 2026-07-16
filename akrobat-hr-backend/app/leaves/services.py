@@ -9,19 +9,22 @@ from app.core.logger import logger
 from app.core.exceptions import bad_request, forbidden, internal_server_error
 from app.core.messages import LEAVE_APPLIED, LEAVE_APPROVED, LEAVE_REJECTED
 from app.core.audit import record_audit_log
-from app.core.rbac import has_permission
 from app.core.helpers.employee_helper import (
     get_employee_id_for_auth_user,
-    is_manager_of,
     get_all_report_ids,
+    get_employee_ids_for_role,
 )
+from app.core.constants import ADMIN
 from app.core.database import supabase_admin
+from app.notifications.services import notify_employee
 
 leave_repo = SupabaseRepository("leave_requests")
 leave_type_repo = SupabaseRepository("leave_types")
+employee_repo = SupabaseRepository("employees")
 
 LEAVE_SELECT = (
-    "*, employees(full_name, employee_id), leave_types(leave_name)"
+    "*, employees!leave_requests_employee_id_fkey(full_name, employee_id), "
+    "leave_types(leave_name)"
 )
 
 
@@ -80,6 +83,44 @@ def apply_leave(auth_user_id: str, data, request: Optional[Request] = None):
             request=request,
         )
 
+        # Notify whoever can act on this request. Approve/reject is gated
+        # to SUPER ADMIN only (see app/leaves/routes.py — "no other role
+        # may approve/reject leave, regardless of what's granted in
+        # role_permissions"), so the manager alone is not guaranteed to be
+        # able to action it, and previously wasn't even notified unless
+        # they *also* happened to be a SUPER ADMIN. Every SUPER ADMIN now
+        # gets the notification; the manager still gets a copy too so
+        # they stay in the loop even though they can't approve it.
+        # Best-effort: notify_employee() swallows its own errors, so this
+        # never blocks the leave request from going through.
+        applicant = employee_repo.get_by_id(employee_id, select="full_name, manager_id")
+        manager_id = applicant.get("manager_id") if applicant else None
+        applicant_name = (
+            applicant.get("full_name", "An employee") if applicant else "An employee"
+        )
+
+        notify_message = (
+            f"{applicant_name} applied for "
+            f"{data.leave_type} from {data.from_date} to {data.to_date} "
+            f"({total_days} day{'s' if total_days != 1 else ''}). "
+            "Awaiting your approval."
+        )
+
+        recipient_ids = set(get_employee_ids_for_role(ADMIN))
+        if manager_id:
+            recipient_ids.add(manager_id)
+        # Applying for one's own leave shouldn't trigger a self-notification
+        # (e.g. a SUPER ADMIN who is also an employee record).
+        recipient_ids.discard(employee_id)
+
+        for recipient_id in recipient_ids:
+            notify_employee(
+                recipient_id,
+                title="New Leave Request",
+                message=notify_message,
+                notification_type="LEAVE",
+            )
+
         return success_response(message=LEAVE_APPLIED, data=leave_data)
 
     except HTTPException:
@@ -100,7 +141,9 @@ def get_my_leaves(auth_user_id: str):
         employee_id = get_employee_id_for_auth_user(auth_user_id)
 
         if not employee_id:
-            return success_response(message="Leave requests fetched successfully.", data=[])
+            return success_response(
+                message="Leave requests fetched successfully.", data=[]
+            )
 
         records, _total = leave_repo.list(
             select=LEAVE_SELECT,
@@ -109,7 +152,9 @@ def get_my_leaves(auth_user_id: str):
             ascending=False,
         )
 
-        return success_response(message="Leave requests fetched successfully.", data=records)
+        return success_response(
+            message="Leave requests fetched successfully.", data=records
+        )
 
     except HTTPException:
         raise
@@ -163,12 +208,16 @@ def get_team_leaves(auth_user_id: str):
         manager_employee_id = get_employee_id_for_auth_user(auth_user_id)
 
         if not manager_employee_id:
-            return success_response(message="Team leave requests fetched successfully.", data=[])
+            return success_response(
+                message="Team leave requests fetched successfully.", data=[]
+            )
 
         report_ids = get_all_report_ids(manager_employee_id)
 
         if not report_ids:
-            return success_response(message="Team leave requests fetched successfully.", data=[])
+            return success_response(
+                message="Team leave requests fetched successfully.", data=[]
+            )
 
         response = (
             supabase_admin.table("leave_requests")
@@ -179,7 +228,8 @@ def get_team_leaves(auth_user_id: str):
         )
 
         return success_response(
-            message="Team leave requests fetched successfully.", data=response.data or []
+            message="Team leave requests fetched successfully.",
+            data=response.data or [],
         )
 
     except HTTPException:
@@ -192,8 +242,9 @@ def get_team_leaves(auth_user_id: str):
 
 # ==========================================
 # APPROVE / REJECT LEAVE
-# (permission-gated at the route via APPROVE_LEAVE; scoped here to the
-#  caller's own reports unless they hold company-wide VIEW_LEAVE_REQUESTS)
+# (route-gated to SUPER ADMIN only — see app/leaves/routes.py. The only
+#  check left here is that a SUPER ADMIN who is also an employee record
+#  can't approve their own leave request.)
 # ==========================================
 
 
@@ -213,12 +264,6 @@ def update_leave_status(
 
         target_employee_id = existing.get("employee_id")
         approver_employee_id = get_employee_id_for_auth_user(auth_user_id)
-
-        has_company_wide_access = has_permission(auth_user_id, "VIEW_LEAVE_REQUESTS")
-        is_direct_or_indirect_manager = is_manager_of(approver_employee_id, target_employee_id)
-
-        if not has_company_wide_access and not is_direct_or_indirect_manager:
-            forbidden("You don't have permission to approve or reject this leave request.")
 
         if approver_employee_id and approver_employee_id == target_employee_id:
             forbidden("You cannot approve or reject your own leave request.")
@@ -259,6 +304,27 @@ def update_leave_status(
             old_values=existing,
             new_values=updated,
             request=request,
+        )
+
+        # Notify the employee whose leave was decided on. Best-effort:
+        # notify_employee() swallows its own errors, so a broken
+        # notifications insert never blocks the approval/rejection itself.
+        leave_type_row = leave_type_repo.get_by_id(
+            existing.get("leave_type_id"), select="leave_name"
+        )
+        leave_type_name = (
+            leave_type_row.get("leave_name") if leave_type_row else "Leave"
+        )
+        notify_employee(
+            target_employee_id,
+            title=f"Leave {data.status}",
+            message=(
+                f"Your {leave_type_name.title()} request "
+                f"({existing.get('start_date')} to {existing.get('end_date')}) "
+                f"has been {data.status.lower()}"
+                + (f" — {data.comments}" if data.comments else ".")
+            ),
+            notification_type="LEAVE",
         )
 
         message = LEAVE_APPROVED if data.status == "Approved" else LEAVE_REJECTED

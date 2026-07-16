@@ -1,4 +1,6 @@
-from fastapi import APIRouter
+from typing import Optional
+
+from fastapi import APIRouter, Query
 
 from app.holidays.schemas import CreateHolidayRequest
 
@@ -19,8 +21,13 @@ def create(data: CreateHolidayRequest):
 
 
 @router.get("/")
-def get_all():
-    return get_holidays()
+def get_all(
+    country: Optional[str] = Query(
+        None,
+        description="Filter by country calendar, e.g. 'SG' or 'IN'. Omit for all.",
+    ),
+):
+    return get_holidays(country=country)
 
 
 @router.get("/{holiday_id}")

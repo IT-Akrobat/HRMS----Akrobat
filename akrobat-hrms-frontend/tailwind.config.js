@@ -3,6 +3,10 @@ export default {
   content: ['./index.html', './src/**/*.{js,jsx,ts,tsx}'],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['Inter', '-apple-system', 'Segoe UI', 'Arial', 'sans-serif'],
+        heading: ['Poppins', 'Inter', '-apple-system', 'Segoe UI', 'Arial', 'sans-serif'],
+      },
       colors: {
         sidebar: {
           DEFAULT: '#0B1830',

@@ -205,7 +205,9 @@ def get_logs_by_date(log_date: str):
             .execute()
         )
 
-        return success_response(message="Audit logs fetched successfully.", data=response.data or [])
+        return success_response(
+            message="Audit logs fetched successfully.", data=response.data or []
+        )
 
     except HTTPException:
         raise
@@ -220,7 +222,7 @@ def get_logs_by_date(log_date: str):
 # ==========================================
 # Deleting audit trail entries undermines the point of an audit trail, so
 # this is deliberately locked down tighter than every other delete route
-# in the backend (no HR ADMIN grant), and the deletion itself is recorded
+# in the backend (no HR grant), and the deletion itself is recorded
 # so there's a trace of who removed what.
 
 

@@ -1,5 +1,18 @@
+import asyncio
+import sys
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+# Windows-only fix: uvicorn's default ProactorEventLoop on Windows has a
+# known race with httpx's connection-pooled sync client (what supabase-py
+# uses under the hood) when several requests hit the same shared client
+# at once - it surfaces as "[WinError 10035] A non-blocking socket
+# operation could not be completed immediately" (WSAEWOULDBLOCK). The
+# SelectorEventLoop doesn't have this issue. No effect on Linux/macOS,
+# where this policy simply doesn't exist.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 from app.auth.routes import router as auth_router

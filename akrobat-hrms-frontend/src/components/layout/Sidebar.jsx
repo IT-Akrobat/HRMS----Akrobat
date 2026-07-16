@@ -80,24 +80,24 @@ export default function Sidebar({ collapsed, onToggleCollapse }) {
   return (
     <aside
       className={`h-screen sticky top-0 flex flex-col bg-sidebar text-slate-200 transition-all duration-200 ${
-        collapsed ? "w-[76px]" : "w-[260px]"
+        collapsed ? "w-[64px]" : "w-[212px]"
       }`}
     >
       {/* Logo */}
-      <div className="flex items-center gap-2 px-4 h-16 border-b border-white/10 shrink-0">
+      <div className="flex items-center gap-2 px-3 h-14 border-b border-white/10 shrink-0">
         <div className="flex items-center gap-3">
           <img
             src={logo}
             alt="Akrobat"
             className={`object-contain shrink-0 transition-all ${
-              collapsed ? "w-15 h-10" : "w-12 h-12"
+              collapsed ? "w-9 h-8" : "w-9 h-9"
             }`}
           />
         </div>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto sidebar-scroll py-3 px-2">
+      <nav className="flex-1 overflow-y-auto sidebar-scroll py-2 px-1.5">
         {items.map((item) => {
           const Icon = item.icon;
           const hasChildren = !!item.children;
@@ -115,14 +115,14 @@ export default function Sidebar({ collapsed, onToggleCollapse }) {
                 key={item.label}
                 to={item.path}
                 className={({ isActive }) =>
-                  `flex items-center gap-3 px-3 py-2.5 my-0.5 rounded-lg text-sm transition-colors ${
+                  `flex items-center gap-2.5 px-2.5 py-2 my-0.5 rounded-md hrms-sidebar-item ${
                     isActive
-                      ? "bg-orange-500/20 text-orange-400 font-medium"
+                      ? "bg-orange-500/20 text-orange-400"
                       : "text-slate-300 hover:bg-white/5 hover:text-white"
                   }`
                 }
               >
-                <Icon size={18} className="shrink-0" />
+                <Icon size={16} className="shrink-0" />
                 {!collapsed && <span className="truncate">{item.label}</span>}
               </NavLink>
             );
@@ -133,29 +133,29 @@ export default function Sidebar({ collapsed, onToggleCollapse }) {
               <button
                 type="button"
                 onClick={() => toggleGroup(item.label)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md hrms-sidebar-item ${
                   isParentActive
-                    ? "bg-orange-500/10 text-orange-400 font-medium"
+                    ? "bg-orange-500/10 text-orange-400"
                     : "text-slate-300 hover:bg-white/5 hover:text-white"
                 }`}
               >
-                <Icon size={18} className="shrink-0" />
+                <Icon size={16} className="shrink-0" />
                 {!collapsed && (
                   <>
                     <span className="flex-1 text-left truncate">
                       {item.label}
                     </span>
                     {isOpen ? (
-                      <ChevronDown size={16} />
+                      <ChevronDown size={14} />
                     ) : (
-                      <ChevronRight size={16} />
+                      <ChevronRight size={14} />
                     )}
                   </>
                 )}
               </button>
 
               {!collapsed && isOpen && (
-                <div className="ml-6 mt-0.5 border-l border-white/10 pl-0 flex flex-col gap-0.5">
+                <div className="ml-5 mt-0.5 border-l border-white/10 pl-0 flex flex-col gap-0.5">
                   {item.children.map((child) => {
                     // EXACT match - this is the key fix!
                     const isChildActive = isExactChildActive(child.path);
@@ -166,7 +166,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }) {
                         to={child.path}
                         // DON'T use the isActive from NavLink for styling
                         // Use our own exact match check
-                        className={`relative px-4 py-2 rounded-md text-sm truncate transition-colors flex items-center ${
+                        className={`relative px-3 py-1.5 rounded-md hrms-sidebar-subitem truncate transition-colors flex items-center ${
                           isChildActive
                             ? "text-orange-400 font-medium"
                             : "text-slate-400 hover:text-white"
@@ -193,7 +193,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }) {
       <button
         type="button"
         onClick={onToggleCollapse}
-        className="flex items-center gap-2 px-4 h-12 border-t border-white/10 text-slate-400 hover:text-white text-sm shrink-0"
+        className="flex items-center gap-2 px-3 h-10 border-t border-white/10 text-slate-400 hover:text-white hrms-sidebar-item shrink-0"
       >
         {collapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
         {!collapsed && <span>Collapse</span>}

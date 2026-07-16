@@ -24,7 +24,7 @@ router = APIRouter(prefix="/designations", tags=["Designations"])
 @router.post("/")
 def create(
     data: CreateDesignationRequest,
-    user=Depends(require_role(["SUPER ADMIN", "HR ADMIN"])),
+    user=Depends(require_role(["SUPER ADMIN", "HR"])),
 ):
 
     return create_designation(data)
@@ -34,7 +34,7 @@ def create(
 
 
 @router.get("/")
-def get_all(user=Depends(require_role(["SUPER ADMIN", "HR ADMIN", "HR EXECUTIVE"]))):
+def get_all(user=Depends(require_role(["SUPER ADMIN", "HR"]))):
 
     return get_designations()
 
@@ -43,9 +43,7 @@ def get_all(user=Depends(require_role(["SUPER ADMIN", "HR ADMIN", "HR EXECUTIVE"
 
 
 @router.get("/{designation_id}")
-def get_one(
-    designation_id: str, user=Depends(require_role(["SUPER ADMIN", "HR ADMIN"]))
-):
+def get_one(designation_id: str, user=Depends(require_role(["SUPER ADMIN", "HR"]))):
 
     return get_designations(designation_id)
 
@@ -56,7 +54,7 @@ def get_one(
 @router.get("/department/{department_id}")
 def by_department(
     department_id: str,
-    user=Depends(require_role(["SUPER ADMIN", "HR ADMIN", "HR EXECUTIVE"])),
+    user=Depends(require_role(["SUPER ADMIN", "HR"])),
 ):
 
     return get_department_designations(department_id)
@@ -69,7 +67,7 @@ def by_department(
 def update(
     designation_id: str,
     data: dict,
-    user=Depends(require_role(["SUPER ADMIN", "HR ADMIN"])),
+    user=Depends(require_role(["SUPER ADMIN", "HR"])),
 ):
 
     return update_designation(designation_id, data)
@@ -79,8 +77,6 @@ def update(
 
 
 @router.delete("/{designation_id}")
-def delete(
-    designation_id: str, user=Depends(require_role(["SUPER ADMIN", "HR ADMIN"]))
-):
+def delete(designation_id: str, user=Depends(require_role(["SUPER ADMIN", "HR"]))):
 
     return delete_designation(designation_id)

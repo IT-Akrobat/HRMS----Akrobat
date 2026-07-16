@@ -11,7 +11,9 @@ from app.leaves.services import (
 )
 
 from app.core.security import get_current_user
-from app.core.rbac import require_permission, require_any_permission
+from app.core.rbac import require_permission
+from app.core.permissions import require_role
+from app.core.constants import ADMIN
 
 router = APIRouter(prefix="/leaves", tags=["Leaves"])
 
@@ -37,12 +39,12 @@ def my_leaves(user=Depends(get_current_user)):
 
 
 # ==========================================
-# GET TEAM LEAVES (Manager / HR / Admin — direct + indirect reports)
+# GET TEAM LEAVES (Manager / HR — view only, direct + indirect reports)
 # ==========================================
 
 
 @router.get("/team")
-def team_leaves(user=Depends(require_any_permission(["APPROVE_LEAVE", "VIEW_LEAVE_REQUESTS"]))):
+def team_leaves(user=Depends(require_permission("VIEW_LEAVE_REQUESTS"))):
     return get_team_leaves(user.id)
 
 
@@ -63,8 +65,8 @@ def all_leaves(
 
 # ==========================================
 # APPROVE / REJECT LEAVE
-# (HR/Admin, or the direct/indirect manager of the requesting employee —
-#  ownership is enforced inside update_leave_status)
+# (SUPER ADMIN only — company policy: no other role may approve/reject
+#  leave, regardless of what's granted in role_permissions)
 # ==========================================
 
 
@@ -73,6 +75,6 @@ def update_status(
     leave_id: str,
     data: UpdateLeaveStatusRequest,
     request: Request,
-    user=Depends(require_permission("APPROVE_LEAVE")),
+    user=Depends(require_role([ADMIN])),
 ):
     return update_leave_status(leave_id, data, auth_user_id=user.id, request=request)

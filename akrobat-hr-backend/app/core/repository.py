@@ -144,23 +144,49 @@ class SupabaseRepository:
             internal_server_error(f"Failed to create {self.table_name}: {e}")
 
     def update(self, record_id: str, payload: dict[str, Any]):
+        stamped_payload = {
+            **payload,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
         try:
-            payload = {**payload, "updated_at": datetime.now(timezone.utc).isoformat()}
-
-            response = (
-                self._table()
-                .update(payload)
-                .eq(self.id_column, record_id)
-                .execute()
-            )
-
-            if not response.data:
-                not_found(f"{self.table_name} record not found.")
-
-            return response.data[0]
+            response = self._run_update(record_id, stamped_payload)
 
         except Exception as e:
-            internal_server_error(f"Failed to update {self.table_name}: {e}")
+            if not self._is_missing_updated_at_column_error(e):
+                internal_server_error(f"Failed to update {self.table_name}: {e}")
+
+            # Some tables (leave_requests, documents, leave_types,
+            # attendance_corrections — see sql/013_add_missing_updated_at_
+            # columns.sql) never got an updated_at column, or PostgREST's
+            # schema cache hasn't picked up a migration that added one
+            # yet. Rather than hard-failing every update against those
+            # tables, retry once without the timestamp so the actual
+            # write still goes through.
+            try:
+                response = self._run_update(record_id, payload)
+            except Exception as retry_error:
+                internal_server_error(
+                    f"Failed to update {self.table_name}: {retry_error}"
+                )
+
+        if not response.data:
+            not_found(f"{self.table_name} record not found.")
+
+        return response.data[0]
+
+    def _run_update(self, record_id: str, payload: dict[str, Any]):
+        return (
+            self._table()
+            .update(payload)
+            .eq(self.id_column, record_id)
+            .execute()
+        )
+
+    @staticmethod
+    def _is_missing_updated_at_column_error(e: Exception) -> bool:
+        text = str(e)
+        return "PGRST204" in text and "updated_at" in text
 
     def delete(self, record_id: str):
         try:

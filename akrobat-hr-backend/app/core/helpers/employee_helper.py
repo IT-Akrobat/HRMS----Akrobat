@@ -137,6 +137,39 @@ def get_employee_id_for_auth_user(auth_user_id: str) -> str | None:
 
 
 # ==========================================
+# GET ALL EMPLOYEE IDS FOR A GIVEN ROLE
+# ==========================================
+
+
+def get_employee_ids_for_role(role_name: str) -> list[str]:
+    """
+    Every employee (with a linked user_profiles row) whose role matches
+    `role_name`, e.g. "SUPER ADMIN". Used to fan a notification out to
+    everyone who holds a role, rather than a single hardcoded/derived
+    person — see notify_employee() call sites in app/leaves/services.py.
+    Returns [] (never raises) if the lookup fails for any reason, since
+    callers treat notifications as best-effort.
+    """
+
+    try:
+        response = (
+            supabase_admin.table("user_profiles")
+            .select("employee_id, roles!inner(role_name)")
+            .eq("roles.role_name", role_name)
+            .execute()
+        )
+
+        return [
+            row["employee_id"]
+            for row in (response.data or [])
+            if row.get("employee_id")
+        ]
+
+    except Exception:
+        return []
+
+
+# ==========================================
 # GET USER PROFILE
 # ==========================================
 

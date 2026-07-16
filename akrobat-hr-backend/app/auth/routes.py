@@ -43,8 +43,13 @@
 #     return success_response(message="User profile fetched successfully.", data=data)
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from app.auth.schemas import LoginRequest, MeEnvelope, RefreshRequest
-from app.auth.services import get_me, login_user, refresh_user_session
+from app.auth.schemas import (
+    ChangePasswordRequest,
+    LoginRequest,
+    MeEnvelope,
+    RefreshRequest,
+)
+from app.auth.services import change_password, get_me, login_user, refresh_user_session
 from app.core.responses import success_response
 from app.core.security import get_current_user
 
@@ -88,6 +93,28 @@ def refresh(data: RefreshRequest):
         "refresh_token": response.session.refresh_token,
         "user_id": response.user.id,
     }
+
+
+@router.post("/change-password")
+def change_password_route(
+    data: ChangePasswordRequest,
+    request: Request,
+    user=Depends(get_current_user),
+):
+    """
+    Self-service password change for the logged-in user. Verifies
+    current_password by re-authenticating with Supabase, then rotates
+    the password via the admin API. See app/auth/services.change_password.
+    """
+
+    result = change_password(
+        user,
+        data.current_password,
+        data.new_password,
+        request=request,
+    )
+
+    return success_response(message=result["message"])
 
 
 @router.get("/me", response_model=MeEnvelope)

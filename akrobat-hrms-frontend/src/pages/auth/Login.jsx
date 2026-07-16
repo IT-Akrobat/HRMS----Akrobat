@@ -102,7 +102,7 @@ export default function Login() {
         <div className="relative z-10 flex flex-col justify-between p-12 w-full">
           <div>
             <img src={logo} alt="Akrobat" className="h-16 mb-10" />
-            <h1 className="text-4xl font-bold tracking-wide leading-tight">
+            <h1 className="text-4xl font-bold tracking-wide leading-tight text-white">
               AKROBAT
               <br />
               HR MANAGEMENT SYSTEM
@@ -132,7 +132,7 @@ export default function Login() {
           <div className="mt-8 bg-white/10 backdrop-blur-sm border border-white/15 rounded-lg p-4 max-w-xs flex gap-3">
             <Shield className="h-6 w-6 text-orange-400 shrink-0" />
             <div>
-              <p className="font-semibold text-sm">
+              <p className="font-semibold text-sm text-white">
                 Secure. Reliable. Compliant.
               </p>
               <p className="text-xs text-white/70 mt-0.5">
@@ -147,7 +147,7 @@ export default function Login() {
       <div className="flex-1 flex flex-col px-6 sm:px-12 lg:px-20 py-6 overflow-hidden">
         <div className="flex-1 flex items-center">
           <div className="w-full max-w-md mx-auto py-2">
-            <h2 className="text-4xl font-bold text-[#0b1f45]">Welcome Back!</h2>
+            <h2 className="text-2xl font-bold text-[#0b1f45]">Welcome Back!</h2>
             <p className="text-gray-500 mt-1">
               Sign in to continue to your Akrobat HRMS account
             </p>
@@ -168,12 +168,14 @@ export default function Login() {
                     className={`w-full pl-11 pr-4 py-3 rounded-lg border transition-colors
     ${
       errors.email
-        ? "border-red-500 focus:border-red-500 focus:ring-red-500"
+        ? "border-orange-500 focus:border-orange-500 focus:ring-orange-500"
         : "border-gray-200 focus:border-[#0b1f45] focus:ring-[#0b1f45]"
     }`}
                   />
                   {errors.email && (
-                    <p className="mt-2 text-sm text-red-500">{errors.email}</p>
+                    <p className="mt-2 text-sm text-orange-500">
+                      {errors.email}
+                    </p>
                   )}
                 </div>
               </div>
@@ -195,7 +197,7 @@ export default function Login() {
                     className={`w-full pl-11 pr-11 py-3 rounded-lg border transition-colors
             ${
               errors.password
-                ? "border-red-500 focus:border-red-500 focus:ring-red-500"
+                ? "border-orange-500 focus:border-orange-500 focus:ring-orange-500"
                 : "border-gray-200 focus:border-[#0b1f45] focus:ring-[#0b1f45]"
             }`}
                   />
@@ -213,7 +215,7 @@ export default function Login() {
 
                 <div className="h-5 mt-1">
                   {errors.password && (
-                    <p className="text-sm text-red-500">{errors.password}</p>
+                    <p className="text-sm text-orange-500">{errors.password}</p>
                   )}
                 </div>
               </div>

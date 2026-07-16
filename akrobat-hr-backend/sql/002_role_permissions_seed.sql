@@ -6,6 +6,11 @@
 -- (which bypasses the check) until this is run.
 --
 -- Adjust freely — this is a sane default, not a hard requirement.
+--
+-- NOTE: the APPROVE_LEAVE grants below (HR ADMIN, MANAGER, OPERATIONS
+-- MANAGER) are revoked by 012_restrict_leave_approval_to_super_admin.sql —
+-- company policy is now that only SUPER ADMIN approves/rejects leave. Left
+-- in place here as history; run 012 after this file.
 
 -- HR ADMIN: full employee/attendance/leave/reports access
 insert into role_permissions (role_id, permission_id)

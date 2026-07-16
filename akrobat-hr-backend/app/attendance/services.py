@@ -14,8 +14,11 @@ from app.core.helpers.employee_helper import (
     get_employee_id_for_auth_user,
     is_manager_of,
     get_all_report_ids,
+    get_employee_ids_for_role,
 )
+from app.core.constants import ADMIN
 from app.core.database import supabase_admin
+from app.notifications.services import notify_employee
 
 attendance_repo = SupabaseRepository("attendance")
 correction_repo = SupabaseRepository("attendance_corrections")
@@ -245,6 +248,43 @@ def check_in(auth_user_id: str, data, request: Optional[Request] = None):
             payload["device_info"] = request.headers.get("user-agent")
 
         attendance_data = attendance_repo.create(payload)
+
+        # Late check-in -> notify every SUPER ADMIN (not managers — this
+        # is deliberately scoped narrower than the leave-request fan-out
+        # in app/leaves/services.apply_leave, since a late-arrival ping
+        # for every manager on every late employee would be noisy; Super
+        # Admin is the role that owns attendance policy company-wide).
+        # Best-effort: notify_employee() swallows its own errors and a
+        # failed lookup here never blocks the check-in itself.
+        if late_minutes > 0:
+            try:
+                employee = (
+                    supabase_admin.table("employees")
+                    .select("employee_id, full_name")
+                    .eq("id", employee_id)
+                    .maybe_single()
+                    .execute()
+                )
+                emp = employee.data if employee else None
+                employee_code = (emp or {}).get("employee_id", "—")
+                employee_name = (emp or {}).get("full_name", "An employee")
+
+                notify_message = (
+                    f"{employee_name} (ID: {employee_code}) checked in "
+                    f"{late_minutes} min late today."
+                )
+
+                for recipient_id in get_employee_ids_for_role(ADMIN):
+                    if recipient_id == employee_id:
+                        continue  # don't ping a Super Admin about their own late check-in
+                    notify_employee(
+                        recipient_id,
+                        title="Late Check-In",
+                        message=notify_message,
+                        notification_type="ATTENDANCE",
+                    )
+            except Exception as e:
+                logger.error(f"Failed to send late check-in notification: {e}")
 
         record_audit_log(
             module="ATTENDANCE",
@@ -524,8 +564,19 @@ def get_my_attendance(
 
         response = query.order("attendance_date", desc=True).execute()
 
+        # The `attendance` table's date column is `attendance_date`, but the
+        # frontend (AttendanceHistory.jsx) reads `date` for display, for its
+        # client-side date-range filter, and for the click-to-open day
+        # summary modal. Without this alias every row's `date` was
+        # `undefined`, so `r.date >= dateFrom` was always false — rows never
+        # survived the filter and there was nothing to click on, regardless
+        # of how much real attendance data existed.
+        rows = [
+            {**row, "date": row.get("attendance_date")} for row in (response.data or [])
+        ]
+
         return success_response(
-            message="Attendance history fetched successfully.", data=response.data or []
+            message="Attendance history fetched successfully.", data=rows
         )
 
     except HTTPException:

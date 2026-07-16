@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { apiClient } from "../../services/apiClient";
+import { toLocalISODate } from "../../utils/date";
 
 // GET /attendance/check-in, /check-out, /break-start, /break-end all work
 // for ANY logged-in user regardless of role (see app/attendance/routes.py —
@@ -42,7 +43,7 @@ import { apiClient } from "../../services/apiClient";
 // quiet "not linked to an employee profile" state instead of a crash.
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return toLocalISODate();
 }
 
 function formatTime(iso) {
@@ -283,7 +284,7 @@ export default function CheckInOutCard({ onActivityChange } = {}) {
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-semibold text-slate-800">Today's Attendance</h3>
         {checkedIn && !checkedOut && (
-          <span className="flex items-center gap-1 text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
+          <span className="flex items-center gap-1 text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded-full">
             <CheckCircle2 size={13} /> Checked in
           </span>
         )}
@@ -350,9 +351,9 @@ export default function CheckInOutCard({ onActivityChange } = {}) {
                     <>
                       <AlertTriangle
                         size={13}
-                        className="text-amber-500 shrink-0 mt-0.5"
+                        className="text-orange-500 shrink-0 mt-0.5"
                       />
-                      <span className="text-amber-600">
+                      <span className="text-orange-600">
                         Location access denied — check-in won't be
                         location-verified.
                       </span>
@@ -362,9 +363,9 @@ export default function CheckInOutCard({ onActivityChange } = {}) {
                     <>
                       <AlertTriangle
                         size={13}
-                        className="text-amber-500 shrink-0 mt-0.5"
+                        className="text-orange-500 shrink-0 mt-0.5"
                       />
-                      <span className="text-amber-600">
+                      <span className="text-orange-600">
                         This browser doesn't support location.
                       </span>
                     </>
@@ -373,9 +374,9 @@ export default function CheckInOutCard({ onActivityChange } = {}) {
                     <>
                       <MapPin
                         size={13}
-                        className="text-emerald-500 shrink-0 mt-0.5"
+                        className="text-blue-500 shrink-0 mt-0.5"
                       />
-                      <span className="text-emerald-600">
+                      <span className="text-blue-600">
                         Within range of {nearest.location.location_name} (
                         {Math.round(nearest.distance)}m)
                       </span>
@@ -385,9 +386,9 @@ export default function CheckInOutCard({ onActivityChange } = {}) {
                     <>
                       <AlertTriangle
                         size={13}
-                        className="text-red-500 shrink-0 mt-0.5"
+                        className="text-orange-500 shrink-0 mt-0.5"
                       />
-                      <span className="text-red-500">
+                      <span className="text-orange-500">
                         {Math.round(nearest.distance)}m from{" "}
                         {nearest.location.location_name} — outside the{" "}
                         {nearest.location.radius}m radius
@@ -425,7 +426,7 @@ export default function CheckInOutCard({ onActivityChange } = {}) {
                   CORS/rate-limit issues like third-party static-image
                   services) — an iframe pointed at a small bounding box
                   around the detected coordinates, with a marker. */}
-              {geoStatus === "ok" && coords && (
+              {/* {geoStatus === "ok" && coords && (
                 <div className="mt-2 rounded-lg overflow-hidden border border-slate-200 bg-slate-100 h-[130px]">
                   <iframe
                     title="Detected location map"
@@ -440,11 +441,11 @@ export default function CheckInOutCard({ onActivityChange } = {}) {
                     }%2C${coords.longitude}`}
                   />
                 </div>
-              )}
+              )} */}
 
-              {geoStatus === "ok" && coords && (
+              {/* {geoStatus === "ok" && coords && (
                 <div className="mt-2 pt-2 border-t border-slate-200">
-                  <div className="flex items-center gap-1 text-emerald-600 font-medium">
+                  <div className="flex items-center gap-1 text-blue-600 font-medium">
                     <MapPin size={11} className="shrink-0" />
                     <span>
                       Location Detected
@@ -462,12 +463,12 @@ export default function CheckInOutCard({ onActivityChange } = {}) {
                     {coords.latitude.toFixed(4)}, {coords.longitude.toFixed(4)}
                   </div>
                 </div>
-              )}
+              )} */}
             </div>
           )}
 
           {error && (
-            <div className="text-xs text-red-500 mb-3">
+            <div className="text-xs text-orange-500 mb-3">
               {error}
               {error.toLowerCase().includes("expired") && (
                 <span className="text-slate-400">
@@ -557,9 +558,9 @@ export default function CheckInOutCard({ onActivityChange } = {}) {
 
           {/* ---------- Last Location ---------- */}
           {(checkInLocation || checkOutLocation) && (
-            <div className="mt-3 bg-indigo-50 rounded-lg p-2.5 flex items-center gap-2.5 overflow-hidden">
+            <div className="mt-3 bg-blue-50 rounded-lg p-2.5 flex items-center gap-2.5 overflow-hidden">
               <div className="flex items-center gap-2 min-w-0 flex-1">
-                <MapPin size={14} className="text-indigo-500 shrink-0" />
+                <MapPin size={14} className="text-blue-500 shrink-0" />
                 <div className="min-w-0">
                   <div className="text-[10px] text-slate-400 font-medium">
                     Last Location
@@ -580,7 +581,7 @@ export default function CheckInOutCard({ onActivityChange } = {}) {
                   today?.check_out_longitude ?? today?.check_in_longitude;
                 if (lat == null || lon == null) return null;
                 return (
-                  <div className="w-20 h-14 rounded-md overflow-hidden border border-indigo-100 shrink-0">
+                  <div className="w-20 h-14 rounded-md overflow-hidden border border-blue-100 shrink-0">
                     <iframe
                       title="Last location map"
                       className="w-full h-full border-0 pointer-events-none"

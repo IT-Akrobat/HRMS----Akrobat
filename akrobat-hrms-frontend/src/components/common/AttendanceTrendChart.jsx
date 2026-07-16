@@ -10,10 +10,10 @@ import { useState } from "react";
 //   { total_employees, trend: [{ date, present, late, on_leave, absent }] }
 
 const SERIES = [
-  { key: "onTime", label: "On Time", color: "#F5730B" },
-  { key: "late", label: "Late", color: "#F59E0B" },
-  { key: "on_leave", label: "On Leave", color: "#3B82F6" },
-  { key: "absent", label: "Absent", color: "#E2E8F0" },
+  { key: "onTime", label: "On Time", color: "#F5730B" }, // brand orange
+  { key: "late", label: "Late", color: "#FDBA74" }, // light orange
+  { key: "on_leave", label: "On Leave", color: "#3B82F6" }, // blue
+  { key: "absent", label: "Absent", color: "#CBD5E1" }, // neutral (no data)
 ];
 
 function dayLabel(iso) {

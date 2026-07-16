@@ -1,11 +1,9 @@
 import {
   ArrowRight,
   CalendarClock,
-  Check,
   ClipboardCheck,
   UserCheck,
   Users,
-  X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
@@ -23,12 +21,9 @@ import { apiClient } from "../../services/apiClient";
 // (see get_all_report_ids in the backend), so no extra role branching is
 // needed here — the data returned is naturally different per manager.
 //
-// Note: INSPECTION MANAGER doesn't hold APPROVE_LEAVE (see the permission
-// matrix) — for that role PUT /leaves/{id} will 403. The Approve/Reject
-// buttons are left in place since the backend is the source of truth and
-// will reject correctly; hiding them client-side per sub-role would need
-// the raw backend role name (user.backendRole) rather than the normalized
-// one, which is available if you want to add that polish later.
+// READ-ONLY: company policy is that only SUPER ADMIN can approve/reject
+// leave (PUT /leaves/{id} is gated to SUPER ADMIN at the route level), so
+// this widget just surfaces pending count — no Approve/Reject actions.
 
 export default function ManagerDashboard() {
   const { user } = useAuth();
@@ -38,7 +33,6 @@ export default function ManagerDashboard() {
 
   const [teamLeaves, setTeamLeaves] = useState([]);
   const [leavesLoading, setLeavesLoading] = useState(true);
-  const [actingOn, setActingOn] = useState(null);
 
   function loadTeamLeaves() {
     setLeavesLoading(true);
@@ -60,18 +54,6 @@ export default function ManagerDashboard() {
 
     loadTeamLeaves();
   }, []);
-
-  async function decide(leaveId, status) {
-    setActingOn(leaveId);
-    try {
-      await apiClient.put(`/leaves/${leaveId}`, { status });
-      loadTeamLeaves();
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      setActingOn(null);
-    }
-  }
 
   const presentCount = teamAttendance.filter(
     (a) => a.status === "Present",
@@ -101,7 +83,7 @@ export default function ManagerDashboard() {
         />
         <StatCard
           icon={CalendarClock}
-          label="Pending Approvals"
+          label="Pending Requests"
           color="blue"
           loading={leavesLoading}
           value={teamLeaves.length}
@@ -109,12 +91,12 @@ export default function ManagerDashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* ---------- Pending team leave approvals ---------- */}
+        {/* ---------- Pending team leave requests (view-only) ---------- */}
         <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold text-slate-800 flex items-center gap-2">
               <ClipboardCheck size={17} className="text-orange-500" /> Pending
-              Leave Approvals
+              Leave Requests
             </h3>
             <Link
               to="/manager/leave/pending"
@@ -153,22 +135,9 @@ export default function ManagerDashboard() {
                       {leave.to_date}
                     </p>
                   </div>
-                  <div className="flex gap-1.5 shrink-0">
-                    <button
-                      onClick={() => decide(leave.id, "Approved")}
-                      disabled={actingOn === leave.id}
-                      className="w-7 h-7 flex items-center justify-center rounded-md bg-emerald-50 text-emerald-600 hover:bg-emerald-100 disabled:opacity-50"
-                    >
-                      <Check size={14} />
-                    </button>
-                    <button
-                      onClick={() => decide(leave.id, "Rejected")}
-                      disabled={actingOn === leave.id}
-                      className="w-7 h-7 flex items-center justify-center rounded-md bg-red-50 text-red-500 hover:bg-red-100 disabled:opacity-50"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
+                  <span className="shrink-0 text-xs font-medium px-2.5 py-1 rounded-full bg-orange-50 text-orange-600">
+                    Pending
+                  </span>
                 </li>
               ))}
             </ul>
@@ -234,8 +203,8 @@ export default function ManagerDashboard() {
                     <span
                       className={`text-xs font-medium px-2 py-0.5 rounded-full ${
                         row.status === "Present"
-                          ? "bg-emerald-50 text-emerald-600"
-                          : "bg-red-50 text-red-500"
+                          ? "bg-blue-50 text-blue-600"
+                          : "bg-orange-50 text-orange-500"
                       }`}
                     >
                       {row.status}

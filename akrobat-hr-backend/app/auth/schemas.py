@@ -62,7 +62,7 @@
 #     data: MeResponse
 from typing import Any, Optional
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 class LoginRequest(BaseModel):
@@ -75,6 +75,15 @@ class LoginRequest(BaseModel):
 class RefreshRequest(BaseModel):
 
     refresh_token: str
+
+
+class ChangePasswordRequest(BaseModel):
+
+    current_password: str
+
+    # Mirrors the frontend's client-side check (Settings.jsx), but the
+    # backend can't trust that check ran — enforce it here too.
+    new_password: str = Field(min_length=8)
 
 
 class SidebarItem(BaseModel):

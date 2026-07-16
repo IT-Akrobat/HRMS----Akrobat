@@ -12,7 +12,7 @@ router = APIRouter(prefix="/departments", tags=["Departments"])
 @router.post("/")
 def create(
     data: CreateDepartmentRequest,
-    user=Depends(require_role(["SUPER ADMIN", "HR ADMIN"])),
+    user=Depends(require_role(["SUPER ADMIN", "HR"])),
 ):
 
     return create_department(data)
@@ -22,7 +22,7 @@ def create(
 
 
 @router.get("/")
-def get_all(user=Depends(require_role(["SUPER ADMIN", "HR ADMIN", "HR EXECUTIVE"]))):
+def get_all(user=Depends(require_role(["SUPER ADMIN", "HR"]))):
 
     return get_departments()
 
@@ -33,7 +33,7 @@ def get_all(user=Depends(require_role(["SUPER ADMIN", "HR ADMIN", "HR EXECUTIVE"
 @router.get("/{department_id}")
 def get_one(
     department_id: str,
-    user=Depends(require_role(["SUPER ADMIN", "HR ADMIN", "HR EXECUTIVE"])),
+    user=Depends(require_role(["SUPER ADMIN", "HR"])),
 ):
 
     return get_departments(department_id)

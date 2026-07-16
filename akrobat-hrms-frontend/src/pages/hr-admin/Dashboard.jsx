@@ -2,13 +2,11 @@ import {
   AlertTriangle,
   ArrowRight,
   CalendarClock,
-  Check,
   ClipboardList,
   Megaphone,
   UserCheck,
   Users,
   UserX,
-  X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
@@ -23,7 +21,6 @@ export default function HrAdminDashboard() {
 
   const [pendingLeaves, setPendingLeaves] = useState([]);
   const [leavesLoading, setLeavesLoading] = useState(true);
-  const [actingOn, setActingOn] = useState(null);
 
   const [announcements, setAnnouncements] = useState([]);
 
@@ -52,18 +49,6 @@ export default function HrAdminDashboard() {
       .then((res) => setAnnouncements(res.data || []))
       .catch(() => setAnnouncements([]));
   }, []);
-
-  async function decide(leaveId, status) {
-    setActingOn(leaveId);
-    try {
-      await apiClient.put(`/leaves/${leaveId}`, { status });
-      loadPendingLeaves();
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      setActingOn(null);
-    }
-  }
 
   return (
     <div>
@@ -111,12 +96,12 @@ export default function HrAdminDashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* ---------- Pending leave approvals (actionable, not just a count) ---------- */}
+        {/* ---------- Pending leave requests (view-only — Super Admin approves) ---------- */}
         <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold text-slate-800 flex items-center gap-2">
               <ClipboardList size={17} className="text-orange-500" /> Pending
-              Leave Approvals
+              Leave Requests
             </h3>
             <Link
               to="/hr-admin/leave/requests"
@@ -153,22 +138,9 @@ export default function HrAdminDashboard() {
                       {leave.to_date}
                     </p>
                   </div>
-                  <div className="flex gap-1.5 shrink-0">
-                    <button
-                      onClick={() => decide(leave.id, "Approved")}
-                      disabled={actingOn === leave.id}
-                      className="w-7 h-7 flex items-center justify-center rounded-md bg-emerald-50 text-emerald-600 hover:bg-emerald-100 disabled:opacity-50"
-                    >
-                      <Check size={14} />
-                    </button>
-                    <button
-                      onClick={() => decide(leave.id, "Rejected")}
-                      disabled={actingOn === leave.id}
-                      className="w-7 h-7 flex items-center justify-center rounded-md bg-red-50 text-red-500 hover:bg-red-100 disabled:opacity-50"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
+                  <span className="shrink-0 text-xs font-medium px-2.5 py-1 rounded-full bg-orange-50 text-orange-600">
+                    Pending
+                  </span>
                 </li>
               ))}
             </ul>
@@ -192,7 +164,7 @@ export default function HrAdminDashboard() {
               {announcements.slice(0, 3).map((a) => (
                 <div
                   key={a.id}
-                  className="bg-amber-50 border border-amber-100 rounded-lg p-3"
+                  className="bg-orange-50 border border-orange-100 rounded-lg p-3"
                 >
                   <p className="text-sm font-medium text-slate-800">
                     {a.title}

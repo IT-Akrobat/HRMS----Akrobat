@@ -7,15 +7,17 @@ import { useState } from "react";
 // Expects the GET /dashboard/department-distribution payload:
 //   { departments: [{ department_id, department_name, employee_count }] }
 
+// Orange + navy brand tints only (no other hues), ordered for max
+// contrast between adjacent department slices.
 const PALETTE = [
-  "#F5730B",
-  "#0B1830",
-  "#3B82F6",
-  "#10B981",
-  "#F59E0B",
-  "#8B5CF6",
-  "#EC4899",
-  "#94A3B8",
+  "#F5730B", // brand orange
+  "#0B1830", // brand navy
+  "#3B82F6", // blue
+  "#FDBA74", // light orange
+  "#1E40AF", // dark blue
+  "#FB923C", // mid orange
+  "#93C5FD", // light blue
+  "#C2410C", // dark orange
 ];
 
 export default function DepartmentDistributionChart({ departments, loading }) {

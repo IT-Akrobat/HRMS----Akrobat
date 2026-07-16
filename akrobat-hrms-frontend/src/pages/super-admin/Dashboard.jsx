@@ -9,7 +9,6 @@ import {
   LogOut,
   MapPin,
   Megaphone,
-  Plus,
   Settings2,
   ShieldCheck,
   UserCheck,
@@ -173,7 +172,7 @@ function formatTime(value) {
 // check-out = dark blue, login = blue, logout = orange.
 function LogIcon({ kind }) {
   const map = {
-    checkin: { Icon: LogIn, bg: "bg-emerald-100", fg: "text-emerald-500" },
+    checkin: { Icon: LogIn, bg: "bg-blue-100", fg: "text-blue-500" },
     checkout: { Icon: LogOut, bg: "bg-[#0B1830]/10", fg: "text-[#0B1830]" },
     login: { Icon: LogIn, bg: "bg-blue-100", fg: "text-blue-500" },
     logout: { Icon: LogOut, bg: "bg-orange-100", fg: "text-orange-500" },
@@ -232,21 +231,59 @@ function placeKey(lat, lon) {
   return `${lat.toFixed(3)},${lon.toFixed(3)}`;
 }
 
+// Nominatim (OpenStreetMap) reverse geocoding — unlike BigDataCloud's free
+// client-side API (used for the *live* GPS fix in CheckInOutCard.jsx),
+// whose Fair Use Policy explicitly restricts it to real-time coordinates
+// captured at the moment of the call and bans stored/cached coordinates,
+// Recent Activity is geocoding *historical* check-in/out coordinates
+// pulled from audit logs — exactly the case BigDataCloud's terms don't
+// allow. Nominatim's usage policy has no such restriction and returns
+// proper neighbourhood/suburb-level detail, so it's the correct tool
+// here. Its policy does ask for max 1 request/sec, which geocodeQueue()
+// below enforces.
 async function reverseGeocode(lat, lon) {
   try {
     const res = await fetch(
-      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`,
+      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=16&addressdetails=1`,
     );
     if (!res.ok) return null;
     const data = await res.json();
-    const parts = [
-      data.city || data.locality || data.principalSubdivision || null,
-      data.principalSubdivision || null,
-      data.countryName || null,
-    ].filter(Boolean);
+    const addr = data.address || {};
+
+    // Finest-grained name Nominatim has for this point, tried in
+    // descending order of granularity — this is the "area" that was
+    // missing before (BigDataCloud rarely resolved it for stored coords).
+    const area =
+      addr.neighbourhood ||
+      addr.suburb ||
+      addr.quarter ||
+      addr.city_district ||
+      addr.borough ||
+      addr.hamlet ||
+      null;
+
+    const city =
+      addr.city || addr.town || addr.village || addr.municipality || null;
+
+    const parts = [area, city, addr.state || null, addr.country || null]
+      .filter(Boolean)
+      // Drop consecutive duplicates (e.g. area === city for smaller towns).
+      .filter((p, i, arr) => p !== arr[i - 1]);
+
     return parts.length ? parts.join(", ") : null;
   } catch {
     return null;
+  }
+}
+
+// Nominatim's usage policy caps requests at 1/sec — this runs the queued
+// lookups one at a time with a delay between each, instead of firing them
+// all in parallel like the old BigDataCloud version did.
+async function geocodeQueue(coordsList, onResolved) {
+  for (const { key, lat, lon } of coordsList) {
+    const label = await reverseGeocode(lat, lon);
+    if (label) onResolved(key, label);
+    await new Promise((r) => setTimeout(r, 1100));
   }
 }
 
@@ -281,30 +318,27 @@ export default function SuperAdminDashboard() {
   function loadLogs() {
     setLogsLoading(true);
     setLogsError(null);
+    // Bumped from 6 -> 25: the panel is a fixed-height scroll area (see
+    // the JSX below), so it can hold far more than 6 rows — 6 barely
+    // filled it. "View Audit Logs" still covers everything beyond this.
     return apiClient
-      .get("/audit-logs/?page=1&limit=6")
+      .get("/audit-logs/?page=1&limit=25")
       .then((res) => {
         const records = res.data?.records || [];
         setLogs(records);
 
-        // Kick off reverse-geocoding for every unique coordinate pair in
-        // this batch, once, rather than per-render.
+        // Geocode every unique coordinate pair in this batch, once, rather
+        // than per-render — throttled to Nominatim's 1 req/sec limit.
         const uniqueCoords = new Map();
         for (const log of records) {
           const entry = parseLogEntry(log);
           if (entry.lat == null || entry.lon == null) continue;
           const key = placeKey(entry.lat, entry.lon);
-          if (!key) continue;
-          if (!uniqueCoords.has(key)) {
-            uniqueCoords.set(key, { lat: entry.lat, lon: entry.lon });
-          }
+          if (!key || uniqueCoords.has(key)) continue;
+          uniqueCoords.set(key, { key, lat: entry.lat, lon: entry.lon });
         }
-        uniqueCoords.forEach(({ lat, lon }, key) => {
-          reverseGeocode(lat, lon).then((label) => {
-            if (label) {
-              setPlaceCache((prev) => ({ ...prev, [key]: label }));
-            }
-          });
+        geocodeQueue(Array.from(uniqueCoords.values()), (key, label) => {
+          setPlaceCache((prev) => ({ ...prev, [key]: label }));
         });
       })
       .catch((err) => {
@@ -464,7 +498,7 @@ export default function SuperAdminDashboard() {
               {announcements.slice(0, 3).map((a) => (
                 <div
                   key={a.id}
-                  className="bg-amber-50 border border-amber-100 rounded-lg p-2"
+                  className="bg-orange-50 border border-orange-100 rounded-lg p-2"
                 >
                   <p className="text-xs font-medium text-slate-800 truncate">
                     {a.title}
@@ -506,7 +540,7 @@ export default function SuperAdminDashboard() {
               ))}
             </div>
           ) : logsError ? (
-            <div className="text-sm text-red-500">
+            <div className="text-sm text-orange-500">
               Couldn't load recent activity: {logsError}
             </div>
           ) : logs.length === 0 ? (
@@ -572,13 +606,13 @@ export default function SuperAdminDashboard() {
       </div>
 
       {/* ---------- Floating round "Add Employee" button ---------- */}
-      <Link
+      {/* <Link
         to="/super-admin/employees/add"
         title="Add Employee"
         className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-orange-500 hover:bg-orange-600 text-white shadow-lg flex items-center justify-center transition-colors z-50"
       >
         <Plus size={24} />
-      </Link>
+      </Link> */}
     </div>
   );
 }

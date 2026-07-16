@@ -147,7 +147,7 @@ from fastapi import HTTPException, Request
 
 from app.core.audit import record_audit_log
 from app.core.database import supabase_admin
-from app.core.exceptions import forbidden, unauthorized
+from app.core.exceptions import bad_request, forbidden, unauthorized
 from app.core.database import supabase
 from app.core.rbac import get_permissions_for_role
 from app.core.sidebar import build_sidebar
@@ -216,6 +216,75 @@ def refresh_user_session(refresh_token: str):
     except Exception as e:
 
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token.")
+
+
+# ==========================================
+# POST /auth/change-password
+# ==========================================
+#
+# Self-service password change for the logged-in user (any role — this
+# isn't an admin resetting someone else's password, see
+# app/employees/services.py for that flow if/when it exists).
+#
+# supabase-py has no standalone "verify this password without logging
+# in" call, so the current password is checked by re-authenticating with
+# it via supabase.auth.sign_in_with_password. That call failing means
+# "current password is wrong", not "session expired" — this is a fresh
+# check against Supabase, not a reuse of the caller's existing session
+# token. Once verified, supabase_admin.auth.admin.update_user_by_id
+# rotates the password using the service-role key (the anon client has
+# no permission to change another session's password directly).
+def change_password(
+    auth_user, current_password: str, new_password: str, request: Request = None
+):
+
+    email = getattr(auth_user, "email", None)
+
+    if not email:
+        bad_request("This account has no email on file; password can't be verified.")
+
+    if current_password == new_password:
+        bad_request("New password must be different from your current password.")
+
+    try:
+
+        verify = supabase.auth.sign_in_with_password(
+            {"email": email, "password": current_password}
+        )
+
+        if not verify.session:
+            bad_request("Current password is incorrect.")
+
+    except HTTPException:
+        raise
+
+    except Exception:
+        bad_request("Current password is incorrect.")
+
+    try:
+
+        supabase_admin.auth.admin.update_user_by_id(
+            auth_user.id, {"password": new_password}
+        )
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+
+        raise HTTPException(status_code=500, detail=f"Could not update password: {e}")
+
+    # Best-effort audit trail — never blocks the response (see
+    # app/core/audit.py).
+    record_audit_log(
+        module="AUTH",
+        action="UPDATE",
+        performed_by=auth_user.id,
+        description="Password changed",
+        request=request,
+    )
+
+    return {"message": "Password updated successfully."}
 
 
 # ==========================================
@@ -320,14 +389,15 @@ def get_me(auth_user) -> dict:
             "designation": designation,
         },
     }
+
+
 # design user managemnt module show what are details to be shown for all roles
 
 # give code separate file dont give full zip file
 
-# then for superadmin that checkin and chennout lovation detetction la exact city la entha area antha mari show pananum checkin and checkout apo 
+# then for superadmin that checkin and chennout lovation detetction la exact city la entha area antha mari show pananum checkin and checkout apo
 
 
-
-# then plus symbol potu onu varathu dashbaord la athu vena 
+# then plus symbol potu onu varathu dashbaord la athu vena
 
 # i have attahed some design pdf look whether it useful
