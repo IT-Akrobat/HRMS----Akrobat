@@ -1,5 +1,5 @@
-import { apiClient } from './apiClient';
-import { normalizeRole } from '../config/roles';
+import { normalizeRole } from "../config/roles";
+import { apiClient } from "./apiClient";
 
 // Real backend wiring for POST /auth/login + GET /auth/me.
 // /auth/login only returns tokens (see backend app/auth/routes.py) —
@@ -8,20 +8,24 @@ import { normalizeRole } from '../config/roles';
 // and what can they see" (see app/auth/services.get_me). Nothing about
 // roles is decided here; this file just stores what the backend says.
 
-const TOKEN_KEY = 'akrobat_token';
-const USER_KEY = 'akrobat_user';
+const TOKEN_KEY = "akrobat_token";
+const USER_KEY = "akrobat_user";
 
 export const authService = {
   async login(email, password) {
-    const loginData = await apiClient.post('/auth/login', { email, password }, { auth: false });
+    const loginData = await apiClient.post(
+      "/auth/login",
+      { email, password },
+      { auth: false },
+    );
     // loginData: { access_token, refresh_token, user_id }
 
     sessionStorage.setItem(TOKEN_KEY, loginData.access_token);
     if (loginData.refresh_token) {
-      sessionStorage.setItem('akrobat_refresh_token', loginData.refresh_token);
+      sessionStorage.setItem("akrobat_refresh_token", loginData.refresh_token);
     }
 
-    const meEnvelope = await apiClient.get('/auth/me');
+    const meEnvelope = await apiClient.get("/auth/me");
     const me = meEnvelope.data;
 
     const user = {
@@ -46,13 +50,17 @@ export const authService = {
 
   logout() {
     sessionStorage.removeItem(TOKEN_KEY);
-    sessionStorage.removeItem('akrobat_refresh_token');
+    sessionStorage.removeItem("akrobat_refresh_token");
     sessionStorage.removeItem(USER_KEY);
   },
 
   getStoredUser() {
     const raw = sessionStorage.getItem(USER_KEY);
     return raw ? JSON.parse(raw) : null;
+  },
+
+  setStoredUser(user) {
+    sessionStorage.setItem(USER_KEY, JSON.stringify(user));
   },
 
   getToken() {

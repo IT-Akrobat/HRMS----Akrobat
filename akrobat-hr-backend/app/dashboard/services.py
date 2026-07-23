@@ -1834,6 +1834,121 @@ def get_department_distribution():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Present days needed in the window before an employee is ranked at all —
+# stops one lucky on-time day for a brand-new employee from outranking
+# someone with weeks of consistent attendance.
+TOP_PERFORMERS_MIN_PRESENT_DAYS = 3
+
+
+def get_top_performers(days: int = 30, limit: int = 5):
+    """Ranks employees by attendance reliability over the last `days`
+    days: punctuality rate (share of present days with zero late_minutes)
+    first, then days present, then overtime minutes as tiebreakers.
+
+    There's no separate "performance rating" concept anywhere in this
+    schema, so rather than invent one, this is derived entirely from the
+    `attendance` table (see sql/001_schema.sql) — the same source of
+    truth the attendance trend chart and audit-log activity use.
+    """
+
+    try:
+
+        end = date.today()
+
+        start = end - timedelta(days=days - 1)
+
+        rows = (
+            supabase_admin.table("attendance")
+            .select("employee_id, late_minutes, working_minutes, overtime_minutes")
+            .gte("attendance_date", start.isoformat())
+            .lte("attendance_date", end.isoformat())
+            .execute()
+            .data
+            or []
+        )
+
+        by_employee = {}
+        for row in rows:
+            emp_id = row.get("employee_id")
+            if not emp_id:
+                continue
+            bucket = by_employee.setdefault(
+                emp_id,
+                {
+                    "present_days": 0,
+                    "on_time_days": 0,
+                    "working_minutes": 0,
+                    "overtime_minutes": 0,
+                },
+            )
+            bucket["present_days"] += 1
+            if (row.get("late_minutes") or 0) == 0:
+                bucket["on_time_days"] += 1
+            bucket["working_minutes"] += row.get("working_minutes") or 0
+            bucket["overtime_minutes"] += row.get("overtime_minutes") or 0
+
+        eligible = {
+            emp_id: b
+            for emp_id, b in by_employee.items()
+            if b["present_days"] >= TOP_PERFORMERS_MIN_PRESENT_DAYS
+        }
+
+        if not eligible:
+            return {"days": days, "employees": []}
+
+        employees = (
+            supabase_admin.table("employees")
+            .select(
+                "id, full_name, employee_id, profile_photo, "
+                "departments!employees_department_id_fkey(department_name)"
+            )
+            .in_("id", list(eligible.keys()))
+            .execute()
+            .data
+            or []
+        )
+
+        emp_by_id = {e["id"]: e for e in employees}
+
+        results = []
+        for emp_id, b in eligible.items():
+            emp = emp_by_id.get(emp_id)
+            if not emp:
+                continue
+            punctuality_rate = b["on_time_days"] / b["present_days"]
+            results.append(
+                {
+                    "employee_id": emp_id,
+                    "employee_code": emp.get("employee_id"),
+                    "full_name": emp.get("full_name"),
+                    "profile_photo": emp.get("profile_photo"),
+                    "department_name": (emp.get("departments") or {}).get(
+                        "department_name"
+                    ),
+                    "present_days": b["present_days"],
+                    "on_time_days": b["on_time_days"],
+                    "punctuality_rate": round(punctuality_rate * 100, 1),
+                    "working_minutes": b["working_minutes"],
+                    "overtime_minutes": b["overtime_minutes"],
+                }
+            )
+
+        results.sort(
+            key=lambda r: (
+                r["punctuality_rate"],
+                r["present_days"],
+                r["overtime_minutes"],
+            ),
+            reverse=True,
+        )
+
+        return {"days": days, "employees": results[:limit]}
+
+    except Exception as e:
+
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # =========================================================================
 # QUOTE OF THE DAY
 # =========================================================================

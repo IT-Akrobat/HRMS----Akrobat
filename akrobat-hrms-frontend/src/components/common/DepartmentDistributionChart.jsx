@@ -25,9 +25,9 @@ export default function DepartmentDistributionChart({ departments, loading }) {
 
   if (loading) {
     return (
-      <div className="bg-white rounded-xl border border-slate-200 p-5">
+      <div className="bg-white rounded-xl border border-slate-200 p-5 h-full flex flex-col">
         <div className="h-5 w-48 bg-slate-100 rounded animate-pulse mb-4" />
-        <div className="h-48 bg-slate-100 rounded animate-pulse" />
+        <div className="h-48 bg-slate-100 rounded animate-pulse flex-1" />
       </div>
     );
   }
@@ -44,18 +44,18 @@ export default function DepartmentDistributionChart({ departments, loading }) {
   let cumulative = 0;
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-5">
+    <div className="bg-white rounded-xl border border-slate-200 p-5 h-full flex flex-col">
       <h3 className="font-semibold text-slate-800 flex items-center gap-2 mb-4">
         <PieChart size={17} className="text-orange-500" /> Employees by
         Department
       </h3>
 
       {rows.length === 0 || total === 0 ? (
-        <p className="text-sm text-slate-400 py-8 text-center">
+        <p className="text-sm text-slate-400 py-8 text-center flex-1 flex items-center justify-center">
           No department data to show yet.
         </p>
       ) : (
-        <div className="flex flex-col items-center gap-6">
+        <div className="flex flex-col items-center gap-6 flex-1 min-h-0">
           <div className="relative shrink-0">
             <svg
               viewBox={`0 0 ${size} ${size}`}
@@ -100,7 +100,12 @@ export default function DepartmentDistributionChart({ departments, loading }) {
             </div>
           </div>
 
-          <div className="w-full space-y-2">
+          {/* Scrollable rather than unbounded — with enough departments
+              this list used to grow taller than the Attendance Trend
+              chart next to it, throwing the two cards out of alignment.
+              Same max-h-64 + overflow-y-auto pattern as the On Leave
+              Today / Birthdays lists below. */}
+          <div className="w-full space-y-2 overflow-y-auto max-h-64">
             {rows.map((row, idx) => (
               <div
                 key={row.department_id ?? row.department_name}

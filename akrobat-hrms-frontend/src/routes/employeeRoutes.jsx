@@ -46,6 +46,7 @@ import LeaveHistory from "../pages/employee/LeaveHistory.jsx";
 import PayrollPayslips from "../pages/employee/PayrollPayslips.jsx";
 import PayrollSalaryDetails from "../pages/employee/PayrollSalaryDetails.jsx";
 import ProfileEmployment from "../pages/employee/ProfileEmployment.jsx";
+import ProfileSites from "../pages/employee/ProfileSite.jsx";
 import Projects from "../pages/employee/Projects.jsx";
 import ProjectsTasks from "../pages/employee/ProjectsTasks.jsx";
 import { commonRoutes } from "./commonRoutes.jsx";
@@ -54,6 +55,7 @@ export const employeeRoutes = [
   { path: "dashboard", element: <Dashboard /> },
   ...commonRoutes,
   { path: "profile/employment", element: <ProfileEmployment /> },
+  { path: "profile/sites", element: <ProfileSites /> },
   { path: "attendance", element: <Attendance /> },
   { path: "attendance/history", element: <AttendanceHistory /> },
   { path: "leave/apply", element: <LeaveApply /> },

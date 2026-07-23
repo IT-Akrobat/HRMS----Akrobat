@@ -2,6 +2,8 @@ import {
   Bell,
   CalendarClock,
   CheckCheck,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Megaphone,
   Trash2,
@@ -9,6 +11,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiClient } from "../../services/apiClient";
+import { parseServerDate } from "../../utils/date";
 import PageHeader from "./PageHeader";
 
 // ---------------------------------------------------------------------
@@ -59,9 +62,13 @@ function typeMeta(type) {
   return TYPE_META[(type || "").toUpperCase()] || TYPE_META.GENERAL;
 }
 
+// Notifications list is paginated client-side, 10 per page.
+const PAGE_SIZE = 10;
+
 function formatDate(dateStr) {
   if (!dateStr) return "";
-  const d = new Date(dateStr);
+  const d = parseServerDate(dateStr);
+  if (!d) return "";
   return d.toLocaleString([], {
     month: "short",
     day: "numeric",
@@ -90,6 +97,7 @@ export default function NotificationsPage({
   const [notifications, setNotifications] = useState(null); // null = loading
   const [filter, setFilter] = useState("all");
   const [busyId, setBusyId] = useState(null);
+  const [page, setPage] = useState(1);
 
   function load() {
     apiClient
@@ -137,6 +145,22 @@ export default function NotificationsPage({
       (n) => (n.notification_type || "").toUpperCase() === filter,
     );
   }, [notifications, filter]);
+
+  // Reset to page 1 whenever the filter changes or the underlying list
+  // reloads, so switching tabs never leaves you stranded on a page that
+  // no longer exists.
+  useEffect(() => {
+    setPage(1);
+  }, [filter, notifications]);
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil((filtered?.length || 0) / PAGE_SIZE),
+  );
+  const pageItems = useMemo(() => {
+    if (!filtered) return filtered;
+    return filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  }, [filtered, page]);
 
   async function markRead(n) {
     if (n.is_read) return;
@@ -265,7 +289,7 @@ export default function NotificationsPage({
           </div>
         ) : (
           <ul className="divide-y divide-slate-100">
-            {filtered.map((n) => {
+            {pageItems.map((n) => {
               const meta = typeMeta(n.notification_type);
               const Icon = meta.icon;
               return (
@@ -319,6 +343,37 @@ export default function NotificationsPage({
               );
             })}
           </ul>
+        )}
+
+        {/* Pagination — 10 notifications per page */}
+        {filtered && filtered.length > 0 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 text-xs text-slate-500">
+            <span>
+              Showing {(page - 1) * PAGE_SIZE + 1}–
+              {Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                disabled={page === 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="w-7 h-7 rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-slate-50 flex items-center justify-center"
+                aria-label="Previous page"
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <span className="px-2">
+                {page} / {totalPages}
+              </span>
+              <button
+                disabled={page === totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="w-7 h-7 rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-slate-50 flex items-center justify-center"
+                aria-label="Next page"
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>

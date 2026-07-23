@@ -17,6 +17,7 @@ import Modal from "../../components/common/Modal";
 import PageHeader from "../../components/common/PageHeader";
 import StatCard from "../../components/common/StatCard";
 import { apiClient } from "../../services/apiClient";
+import { parseServerDate } from "../../utils/date";
 
 // ---------------------------------------------------------------------
 // Backend contract (app/audit_logs/routes.py — VIEW_AUDIT_LOGS, which
@@ -107,9 +108,26 @@ function initials(name) {
     .toUpperCase();
 }
 
+function Avatar({ person, className }) {
+  return person?.profile_photo ? (
+    <img
+      src={person.profile_photo}
+      alt={person.full_name}
+      className={`${className} object-cover shrink-0`}
+    />
+  ) : (
+    <div
+      className={`${className} bg-orange-100 text-orange-700 font-semibold flex items-center justify-center shrink-0`}
+    >
+      {initials(person?.full_name)}
+    </div>
+  );
+}
+
 function formatDateTime(dateStr) {
   if (!dateStr) return "—";
-  const d = new Date(dateStr);
+  const d = parseServerDate(dateStr);
+  if (!d) return "—";
   return d.toLocaleString([], {
     month: "short",
     day: "numeric",
@@ -173,7 +191,7 @@ export default function SecurityAuditLogs() {
     if (!records) return 0;
     const today = new Date().toDateString();
     return records.filter(
-      (r) => new Date(r.created_at).toDateString() === today,
+      (r) => parseServerDate(r.created_at)?.toDateString() === today,
     ).length;
   }, [records]);
 
@@ -318,9 +336,10 @@ export default function SecurityAuditLogs() {
                     >
                       <td className="px-5 py-3">
                         <div className="flex items-center gap-2.5">
-                          <div className="w-7 h-7 rounded-full bg-orange-100 text-orange-700 text-[10px] font-semibold flex items-center justify-center shrink-0">
-                            {initials(log.employees?.full_name)}
-                          </div>
+                          <Avatar
+                            person={log.employees}
+                            className="w-7 h-7 rounded-full text-[10px]"
+                          />
                           <div className="min-w-0">
                             <p className="text-sm font-medium text-slate-700 truncate">
                               {log.employees?.full_name || "System"}

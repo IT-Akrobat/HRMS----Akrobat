@@ -13,4 +13,14 @@ export const reportsService = {
   leaves: () => apiClient.get("/reports/leaves"),
   payroll: () => apiClient.get("/reports/payroll"),
   projects: () => apiClient.get("/reports/projects"),
+  // One employee: profile, manager, sites worked (+ hours per site), and
+  // lifetime attendance totals — backs the per-row "download full report".
+  employeeFull: (employeeId) =>
+    apiClient.get(`/reports/employees/${employeeId}/full`),
+  // One employee, one calendar month ("YYYY-MM") — daily records plus
+  // the month's totals (working hours, break time, overtime, lates).
+  employeeMonthlyAttendance: (employeeId, month) =>
+    apiClient.get(
+      `/reports/attendance/employee/${employeeId}?month=${encodeURIComponent(month)}`,
+    ),
 };

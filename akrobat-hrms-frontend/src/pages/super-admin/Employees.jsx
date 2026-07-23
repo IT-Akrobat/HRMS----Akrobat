@@ -9,6 +9,7 @@ import {
   Loader2,
   Mail,
   MapPin,
+  MapPinned,
   Pencil,
   Phone,
   Plus,
@@ -20,6 +21,42 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import PageHeader from "../../components/common/PageHeader";
 import { apiClient } from "../../services/apiClient";
+import { parseLocalISODate } from "../../utils/date";
+import { filterShiftsForSelection } from "../../utils/shiftMapping";
+import { unwrap } from "../../utils/unwrap";
+
+// Field staff (Inspection/Operation) rotate between assigned sites — see
+// app/core/helpers/employee_helper.py::get_field_employee_ids(), which
+// treats any department whose name starts with INSPECTION/OPERATION as
+// "field". Mirrored here (rather than trusting a boolean from the API)
+// so the site-history table only renders for the departments that
+// actually have GET /site-assignments/employee/{id} data.
+function isFieldDepartment(departmentName) {
+  const n = (departmentName || "").toUpperCase();
+  return n.startsWith("INSPECTION") || n.startsWith("OPERATION");
+}
+
+// assigned_from/assigned_to are DATE columns ("YYYY-MM-DD"), so these are
+// parsed with parseLocalISODate (not `new Date(str)`) to avoid the same
+// UTC-shift-by-a-day bug documented in utils/date.js.
+function formatDuration(fromStr, toStr) {
+  const from = parseLocalISODate(fromStr);
+  if (!from) return "—";
+  const to = toStr ? parseLocalISODate(toStr) : new Date();
+  const days = Math.max(
+    0,
+    Math.round((to.getTime() - from.getTime()) / 86400000),
+  );
+  if (days < 1) return "Today";
+  if (days < 30) return `${days} day${days === 1 ? "" : "s"}`;
+  const months = Math.floor(days / 30);
+  const remDays = days % 30;
+  if (months < 12)
+    return remDays > 0 ? `${months} mo ${remDays} d` : `${months} mo`;
+  const years = Math.floor(months / 12);
+  const remMonths = months % 12;
+  return remMonths > 0 ? `${years} yr ${remMonths} mo` : `${years} yr`;
+}
 
 // ---------------------------------------------------------------------
 // Wired to the real backend: GET/POST/PUT/DELETE /employees, plus
@@ -48,8 +85,8 @@ function initials(name) {
 
 function formatDate(value) {
   if (!value) return "—";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "—";
+  const d = parseLocalISODate(value);
+  if (!d || Number.isNaN(d.getTime())) return "—";
   return d.toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
@@ -72,6 +109,22 @@ function avatarColor(seed) {
   for (let i = 0; i < seed.length; i++)
     hash = (hash + seed.charCodeAt(i)) % AVATAR_COLORS.length;
   return AVATAR_COLORS[hash];
+}
+
+function Avatar({ person, className }) {
+  return person?.profile_photo ? (
+    <img
+      src={person.profile_photo}
+      alt={person.full_name}
+      className={`${className} object-cover shrink-0`}
+    />
+  ) : (
+    <div
+      className={`${className} flex items-center justify-center font-semibold shrink-0 ${avatarColor(person?.full_name)}`}
+    >
+      {initials(person?.full_name)}
+    </div>
+  );
 }
 
 function Field({ label, required, error, children }) {
@@ -213,7 +266,17 @@ function EmployeeFormModal({ mode, employee, refData, onClose, onSaved }) {
         const stillValid = designations.some(
           (d) => d.id === next.designation_id && d.department_id === value,
         );
-        if (!stillValid) next.designation_id = "";
+        if (!stillValid) {
+          next.designation_id = "";
+          next.shift_id = "";
+        }
+      }
+      // Every designation has exactly one fixed timing (see
+      // src/utils/shiftMapping.js) — auto-fill it the moment a
+      // designation is picked; HR can still override it below.
+      if (key === "designation_id") {
+        const picked = designations.find((d) => d.id === value);
+        if (picked?.shifts?.id) next.shift_id = picked.shifts.id;
       }
       return next;
     });
@@ -227,6 +290,22 @@ function EmployeeFormModal({ mode, employee, refData, onClose, onSaved }) {
   const designationOptions = form.department_id
     ? designations.filter((d) => d.department_id === form.department_id)
     : designations;
+
+  // Shifts aren't tagged with a department in the schema, but every
+  // designation has exactly one fixed timing per department — so the
+  // Shift dropdown is filtered down to just that one option, e.g.
+  // picking INSPECTION only shows Inspection Site's timing.
+  const selectedDepartment = departments.find(
+    (d) => d.id === form.department_id,
+  );
+  const selectedDesignation = designations.find(
+    (d) => d.id === form.designation_id,
+  );
+  const filteredShifts = filterShiftsForSelection(
+    shifts,
+    selectedDepartment?.department_name,
+    selectedDesignation?.designation_name,
+  );
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -417,10 +496,16 @@ function EmployeeFormModal({ mode, employee, refData, onClose, onSaved }) {
                   allLabel="Select shift"
                   value={form.shift_id}
                   onChange={(v) => set("shift_id", v)}
-                  options={shifts}
+                  options={filteredShifts}
                   getKey={(s) => s.id}
                   getLabel={(s) => s.shift_name}
                 />
+                {selectedDesignation?.shifts && (
+                  <span className="text-xs text-slate-400 mt-1 block">
+                    Auto-set to {selectedDesignation.shifts.shift_name}'s timing
+                    for this designation.
+                  </span>
+                )}
               </Field>
               <Field label="Joining Date">
                 <input
@@ -525,6 +610,31 @@ function EmployeeViewModal({ employee, employees, onClose, onEdit }) {
 
   const manager = (employees || []).find((e) => e.id === employee.manager_id);
 
+  const isField = isFieldDepartment(employee.departments?.department_name);
+  const [siteHistory, setSiteHistory] = useState(null); // null = loading
+  const [siteHistoryError, setSiteHistoryError] = useState(null);
+
+  useEffect(() => {
+    if (!isField) return;
+    let cancelled = false;
+    setSiteHistory(null);
+    setSiteHistoryError(null);
+    apiClient
+      .get(`/site-assignments/employee/${employee.id}`)
+      .then((res) => {
+        if (!cancelled) setSiteHistory(unwrap(res) || []);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setSiteHistoryError(err?.message || "Unable to load site history.");
+          setSiteHistory([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [employee.id, isField]);
+
   return (
     <div className="fixed inset-0 z-50">
       {/* Backdrop */}
@@ -543,11 +653,7 @@ function EmployeeViewModal({ employee, employees, onClose, onEdit }) {
       >
         <div className="px-6 py-5 border-b border-slate-100 flex items-start justify-between shrink-0">
           <div className="flex items-center gap-3 min-w-0">
-            <div
-              className={`w-12 h-12 rounded-full flex items-center justify-center font-semibold shrink-0 ${avatarColor(employee.full_name)}`}
-            >
-              {initials(employee.full_name)}
-            </div>
+            <Avatar person={employee} className="w-12 h-12 rounded-full" />
             <div className="min-w-0">
               <h2 className="text-base font-bold text-slate-800 truncate">
                 {employee.full_name}
@@ -624,6 +730,88 @@ function EmployeeViewModal({ employee, employees, onClose, onEdit }) {
               />
             </div>
           </div>
+
+          {isField && (
+            <div>
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400 mt-5 mb-2 flex items-center gap-1.5">
+                <MapPinned size={12} />
+                Site History
+              </h3>
+
+              {siteHistory === null && (
+                <div className="flex items-center gap-2 text-sm text-slate-400 py-4">
+                  <Loader2 size={14} className="animate-spin" />
+                  Loading site history…
+                </div>
+              )}
+
+              {siteHistory !== null && siteHistoryError && (
+                <p className="text-sm text-orange-500 py-2">
+                  {siteHistoryError}
+                </p>
+              )}
+
+              {siteHistory !== null &&
+                !siteHistoryError &&
+                siteHistory.length === 0 && (
+                  <p className="text-sm text-slate-400 py-2">
+                    No sites assigned yet.
+                  </p>
+                )}
+
+              {siteHistory !== null &&
+                !siteHistoryError &&
+                siteHistory.length > 0 && (
+                  <div className="overflow-hidden rounded-lg border border-slate-100">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
+                          <th className="px-3 py-2">Site</th>
+                          <th className="px-3 py-2">From</th>
+                          <th className="px-3 py-2">To</th>
+                          <th className="px-3 py-2">Duration</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {siteHistory.map((row) => (
+                          <tr key={row.id}>
+                            <td className="px-3 py-2 align-top">
+                              <div className="font-medium text-slate-700">
+                                {row.locations?.location_name || "—"}
+                              </div>
+                              {row.locations?.address && (
+                                <div className="text-xs text-slate-400">
+                                  {row.locations.address}
+                                </div>
+                              )}
+                              {row.is_active && (
+                                <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-600">
+                                  Current
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 align-top text-slate-600 whitespace-nowrap">
+                              {formatDate(row.assigned_from)}
+                            </td>
+                            <td className="px-3 py-2 align-top text-slate-600 whitespace-nowrap">
+                              {row.assigned_to
+                                ? formatDate(row.assigned_to)
+                                : "Present"}
+                            </td>
+                            <td className="px-3 py-2 align-top text-slate-600 whitespace-nowrap">
+                              {formatDuration(
+                                row.assigned_from,
+                                row.assigned_to,
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100 shrink-0">
@@ -967,11 +1155,10 @@ export default function Employees() {
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <div
-                          className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${avatarColor(emp.full_name)}`}
-                        >
-                          {initials(emp.full_name)}
-                        </div>
+                        <Avatar
+                          person={emp}
+                          className="w-9 h-9 rounded-full text-xs"
+                        />
                         <div className="min-w-0">
                           <div className="font-medium text-slate-800 truncate">
                             {emp.full_name}

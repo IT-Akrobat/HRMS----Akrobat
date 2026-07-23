@@ -8,7 +8,7 @@ import {
   Settings,
   ShieldCheck,
   User,
-  Users
+  Users,
 } from "lucide-react";
 import { ROLES } from "./roles";
 
@@ -25,12 +25,23 @@ import { ROLES } from "./roles";
 export const NAVIGATION_CONFIG = {
   [ROLES.EMPLOYEE]: [
     { label: "Dashboard", icon: LayoutDashboard, path: "/employee/dashboard" },
+
     {
       label: "My Profile",
       icon: User,
       children: [
-        { label: "Personal Details", path: "/employee/profile/personal" },
-        { label: "Employment Details", path: "/employee/profile/employment" },
+        {
+          label: "Personal Details",
+          path: "/employee/profile/personal",
+        },
+        {
+          label: "Employment Details",
+          path: "/employee/profile/employment",
+        },
+        {
+          label: "Sites Worked",
+          path: "/employee/profile/sites",
+        },
       ],
     },
     {
@@ -86,6 +97,7 @@ export const NAVIGATION_CONFIG = {
       children: [
         { label: "Team Members", path: "/manager/team/members" },
         { label: "Employee Details", path: "/manager/team/employee-details" },
+        { label: "Site Locations", path: "/manager/team/locations" },
       ],
     },
     {
@@ -209,7 +221,7 @@ export const NAVIGATION_CONFIG = {
       icon: Users,
       children: [
         { label: "Users", path: "/super-admin/users" },
-        { label: "Roles", path: "/super-admin/users/roles" },
+        // { label: "Roles", path: "/super-admin/users/roles" },
         { label: "Permissions", path: "/super-admin/users/permissions" },
       ],
     },

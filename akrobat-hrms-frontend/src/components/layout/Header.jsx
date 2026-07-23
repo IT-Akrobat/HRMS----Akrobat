@@ -15,6 +15,7 @@ import { ROLE_BASE_PATH, ROLE_LABELS } from "../../config/roles";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import { apiClient } from "../../services/apiClient";
+import { parseServerDate } from "../../utils/date";
 
 // Notification bell now backed by the real API (see app/notifications —
 // GET /notifications/my, PUT /:id/read, PUT /my/read-all). The leaves
@@ -34,9 +35,68 @@ function typeStyle(type) {
   return TYPE_STYLES[(type || "").toUpperCase()] || TYPE_STYLES.GENERAL;
 }
 
+// Short two-tone "ping" generated in-browser (no audio file to ship/host).
+// Wrapped in try/catch because some browsers block audio until the user
+// has interacted with the page at least once (autoplay policy) — that's
+// fine, it just silently no-ops on the very first notification in that case.
+function playNotificationSound() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const now = ctx.currentTime;
+    [880, 1174].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      const start = now + i * 0.12;
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.15, start + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.18);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 0.2);
+    });
+    setTimeout(() => ctx.close(), 500);
+  } catch {
+    // Web Audio unsupported/blocked — non-fatal, toast still shows.
+  }
+}
+
+// Native OS/browser notification — this is what shows up even when the
+// person has switched to another tab or app (like WhatsApp Web), as long
+// as this tab is still open somewhere in the browser. It needs the
+// person to have granted the browser's notification permission once
+// (requested below on first load); if they never grant it, or the
+// browser doesn't support the API, this just silently no-ops and the
+// in-app toast + bell badge are still there as the fallback.
+function showBrowserNotification(n, onOpen) {
+  if (typeof Notification === "undefined") return;
+  if (Notification.permission !== "granted") return;
+  try {
+    const popup = new Notification(n.title || "New notification", {
+      body: n.message || "",
+      icon: "/akrobat-logo.png",
+      tag: `akrobat-notification-${n.id}`,
+    });
+    popup.onclick = () => {
+      window.focus();
+      onOpen?.();
+      popup.close();
+    };
+  } catch {
+    // Some mobile browsers only support ServiceWorkerRegistration
+    // .showNotification, not the plain Notification constructor — non-fatal.
+  }
+}
+
 function timeAgo(dateStr) {
   if (!dateStr) return "";
-  const diffMs = Date.now() - new Date(dateStr).getTime();
+  const parsed = parseServerDate(dateStr);
+  if (!parsed) return "";
+  const diffMs = Date.now() - parsed.getTime();
   const mins = Math.floor(diffMs / 60000);
   if (mins < 1) return "Just now";
   if (mins < 60) return `${mins}m ago`;
@@ -44,7 +104,7 @@ function timeAgo(dateStr) {
   if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
   if (days < 7) return `${days}d ago`;
-  return new Date(dateStr).toLocaleDateString([], {
+  return parsed.toLocaleDateString([], {
     month: "short",
     day: "numeric",
   });
@@ -81,19 +141,33 @@ function NotificationBell() {
         }
 
         const newOnes = rows.filter((n) => !seenIdsRef.current.has(n.id));
+        if (newOnes.length > 0) {
+          // One sound per poll (not one per notification) even if several
+          // arrived at once — matches how WhatsApp etc. only ping once
+          // for a burst of messages rather than a machine-gun of beeps.
+          playNotificationSound();
+        }
         for (const n of newOnes) {
           seenIdsRef.current.add(n.id);
           const { icon: Icon, className } = typeStyle(n.notification_type);
+          const openNotifications = () => {
+            setOpen(false);
+            navigate(`${ROLE_BASE_PATH[role] || ""}/notifications`);
+          };
           showToast({
             title: n.title,
             message: n.message,
             icon: Icon,
             iconClassName: className,
-            onClick: () => {
-              setOpen(false);
-              navigate(`${ROLE_BASE_PATH[role] || ""}/notifications`);
-            },
+            onClick: openNotifications,
           });
+          // Only fire the OS-level popup when this tab isn't the one the
+          // person is actually looking at — if they're already on the
+          // site, the toast above is enough and a native popup on top
+          // would just be noisy.
+          if (document.hidden) {
+            showBrowserNotification(n, openNotifications);
+          }
         }
       })
       .catch(() => setNotifications([]))
@@ -108,6 +182,21 @@ function NotificationBell() {
     // ~20s on its own, without the user needing to refresh the page.
     const interval = setInterval(load, 20000);
     return () => clearInterval(interval);
+  }, []);
+
+  // Ask once for permission to show native browser/OS notifications —
+  // this is what lets a new notification reach the person even when
+  // they've switched away to another tab or app (as long as this tab is
+  // still open somewhere), similar to how WhatsApp Web pings you. If they
+  // dismiss/deny the prompt, everything still works via the in-app toast
+  // and bell badge — this is a bonus channel, not a requirement.
+  useEffect(() => {
+    if (
+      typeof Notification !== "undefined" &&
+      Notification.permission === "default"
+    ) {
+      Notification.requestPermission().catch(() => {});
+    }
   }, []);
 
   useEffect(() => {
@@ -245,41 +334,12 @@ export default function Header() {
   const navigate = useNavigate();
 
   const [menuOpen, setMenuOpen] = useState(false);
-  const [profilePhoto, setProfilePhoto] = useState(null);
 
-  // Load profile photo
-  useEffect(() => {
-    function loadProfilePhoto() {
-      const possibleIds = [
-        user?.employee_id,
-        user?.id,
-        user?.employee?.id,
-        user?.profile?.employee_id,
-      ].filter(Boolean);
-
-      for (const id of possibleIds) {
-        const photo = localStorage.getItem(`akrobat_profile_photo_${id}`);
-
-        if (photo) {
-          setProfilePhoto(photo);
-          return;
-        }
-      }
-
-      setProfilePhoto(null);
-    }
-
-    loadProfilePhoto();
-
-    window.addEventListener("akrobat:profile-photo-updated", loadProfilePhoto);
-
-    return () => {
-      window.removeEventListener(
-        "akrobat:profile-photo-updated",
-        loadProfilePhoto,
-      );
-    };
-  }, [user]);
+  // The employee's actual stored photo, same field every other screen
+  // (dashboard cards, team lists, etc) reads from — kept in sync via
+  // AuthContext.updateUser() whenever the photo is changed on the
+  // My Profile page, so this updates immediately without a re-login.
+  const profilePhoto = user?.profile?.profile_photo || null;
 
   return (
     <header className="header h-16 flex items-center justify-between px-4 sm:px-6 bg-white border-b border-slate-200 sticky top-0 z-20">

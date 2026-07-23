@@ -21,6 +21,7 @@ import { useEffect, useMemo, useState } from "react";
 import PageHeader from "../../components/common/PageHeader";
 import StatCard from "../../components/common/StatCard";
 import { apiClient } from "../../services/apiClient";
+import { filterShiftsForSelection } from "../../utils/shiftMapping";
 
 // ---------------------------------------------------------------------
 // Scoped view of the Employees module: same backend, filtered down to
@@ -137,7 +138,17 @@ function EmployeeFormModal({
         const stillValid = designations.some(
           (d) => d.id === next.designation_id && d.department_id === value,
         );
-        if (!stillValid) next.designation_id = "";
+        if (!stillValid) {
+          next.designation_id = "";
+          next.shift_id = "";
+        }
+      }
+      // Every designation has exactly one fixed timing (see
+      // src/utils/shiftMapping.js) — auto-fill it the moment a
+      // designation is picked; HR can still override it below.
+      if (key === "designation_id") {
+        const picked = designations.find((d) => d.id === value);
+        if (picked?.shifts?.id) next.shift_id = picked.shifts.id;
       }
       return next;
     });
@@ -149,6 +160,21 @@ function EmployeeFormModal({
   const designationOptions = form.department_id
     ? designations.filter((d) => d.department_id === form.department_id)
     : designations;
+
+  // Shifts aren't tagged with a department in the schema, but every
+  // designation has exactly one fixed timing per department — so the
+  // Shift dropdown is filtered down to just that one option.
+  const selectedDepartment = departments.find(
+    (d) => d.id === form.department_id,
+  );
+  const selectedDesignation = designations.find(
+    (d) => d.id === form.designation_id,
+  );
+  const filteredShifts = filterShiftsForSelection(
+    shifts,
+    selectedDepartment?.department_name,
+    selectedDesignation?.designation_name,
+  );
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -353,12 +379,18 @@ function EmployeeFormModal({
                   onChange={(e) => set("shift_id", e.target.value)}
                 >
                   <option value="">Select shift</option>
-                  {shifts.map((s) => (
+                  {filteredShifts.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.shift_name}
                     </option>
                   ))}
                 </select>
+                {selectedDesignation?.shifts && (
+                  <span className="text-xs text-slate-400 mt-1 block">
+                    Auto-set to {selectedDesignation.shifts.shift_name}'s timing
+                    for this designation.
+                  </span>
+                )}
               </Field>
               <Field label="Joining Date">
                 <input

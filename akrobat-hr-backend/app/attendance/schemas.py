@@ -45,3 +45,28 @@ class AdminUpdateAttendanceRequest(BaseModel):
     check_out_time: Optional[datetime] = None
 
     status: Optional[str] = None
+
+
+# ==========================================
+# SITE VISITS (multi-location field staff — Inspection / Operation)
+# ==========================================
+
+
+class SiteVisitArriveRequest(BaseModel):
+
+    location_id: str
+
+    latitude: Optional[float] = None
+
+    longitude: Optional[float] = None
+
+    notes: Optional[str] = None
+
+
+class SiteVisitDepartRequest(BaseModel):
+
+    latitude: Optional[float] = None
+
+    longitude: Optional[float] = None
+
+    notes: Optional[str] = None

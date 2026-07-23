@@ -60,7 +60,7 @@ function cacheForToday(quote, bg) {
   }
 }
 
-export default function QuoteOfDayCard() {
+export default function QuoteOfDayCard({ compact = false } = {}) {
   const [quote, setQuote] = useState(DEFAULT_QUOTE);
   const [bg, setBg] = useState(DEFAULT_BG);
   const [loading, setLoading] = useState(true);
@@ -104,6 +104,30 @@ export default function QuoteOfDayCard() {
       cancelled = true;
     };
   }, []);
+
+  if (compact) {
+    return (
+      <div
+        className="relative overflow-hidden rounded-xl w-full sm:w-[420px] shrink-0 bg-cover bg-center"
+        style={{ backgroundImage: `url(${bg})` }}
+      >
+        <div className="absolute inset-0 bg-white/85" />
+        <div className="relative z-10 flex items-center gap-2.5 pl-2.5 pr-3.5 py-2">
+          <div className="w-6 h-6 rounded-full bg-white flex items-center justify-center shrink-0">
+            <Quote size={13} className="text-orange-500" />
+          </div>
+          {loading ? (
+            <div className="h-2.5 bg-slate-200/70 rounded w-full animate-pulse" />
+          ) : (
+            <p className="min-w-0 flex-1 text-xs leading-snug text-slate-700">
+              <span className="font-medium">{quote.text}</span>
+              <span className="text-slate-500 italic"> — {quote.author}</span>
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

@@ -22,14 +22,62 @@ function dayLabel(iso) {
   });
 }
 
-export default function AttendanceTrendChart({ trend, loading }) {
+// Compact-label variant used for the Month view (30 daily bars) — weekday
+// names ("Mon") get crowded/illegible at that bar width, so this shows
+// "D Mon" (e.g. "3 Jul") instead, matching the tooltip's date format.
+function dayLabelShort(iso) {
+  return new Date(iso + "T00:00:00").toLocaleDateString([], {
+    day: "numeric",
+    month: "short",
+  });
+}
+
+const RANGE_OPTIONS = [
+  { key: "week", label: "Week" },
+  { key: "month", label: "Month" },
+];
+
+function RangeToggle({ range, onRangeChange }) {
+  return (
+    <div className="flex items-center bg-slate-100 rounded-full p-0.5 shrink-0">
+      {RANGE_OPTIONS.map((opt) => (
+        <button
+          key={opt.key}
+          type="button"
+          onClick={() => onRangeChange(opt.key)}
+          className={`text-xs font-medium px-2.5 py-1 rounded-full transition-colors ${
+            range === opt.key
+              ? "bg-white text-slate-800 shadow-sm"
+              : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export default function AttendanceTrendChart({
+  trend,
+  loading,
+  range,
+  onRangeChange,
+}) {
   const [hoverIdx, setHoverIdx] = useState(null);
 
   if (loading) {
     return (
-      <div className="bg-white rounded-xl border border-slate-200 p-5">
-        <div className="h-5 w-40 bg-slate-100 rounded animate-pulse mb-4" />
-        <div className="h-48 bg-slate-100 rounded animate-pulse" />
+      <div className="bg-white rounded-xl border border-slate-200 p-5 h-full flex flex-col">
+        <div className="flex items-center justify-between mb-4">
+          <div className="h-5 w-40 bg-slate-100 rounded animate-pulse" />
+          {onRangeChange ? (
+            <RangeToggle range={range} onRangeChange={onRangeChange} />
+          ) : (
+            <div className="h-5 w-16 bg-slate-100 rounded animate-pulse" />
+          )}
+        </div>
+        <div className="h-48 bg-slate-100 rounded animate-pulse flex-1" />
       </div>
     );
   }
@@ -59,23 +107,27 @@ export default function AttendanceTrendChart({ trend, loading }) {
   const hovered = hoverIdx != null ? rows[hoverIdx] : null;
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-5">
+    <div className="bg-white rounded-xl border border-slate-200 p-5 h-full flex flex-col">
       <div className="flex items-center justify-between mb-1">
         <h3 className="font-semibold text-slate-800 flex items-center gap-2">
           <TrendingUp size={17} className="text-orange-500" /> Attendance Trend
         </h3>
-        <span className="text-xs text-slate-400">
-          Last {days.length || 7} days
-        </span>
+        {onRangeChange ? (
+          <RangeToggle range={range} onRangeChange={onRangeChange} />
+        ) : (
+          <span className="text-xs text-slate-400">
+            Last {days.length || 7} days
+          </span>
+        )}
       </div>
 
       {days.length === 0 ? (
-        <p className="text-sm text-slate-400 py-8 text-center">
+        <p className="text-sm text-slate-400 py-8 text-center flex-1 flex items-center justify-center">
           No attendance data yet for this period.
         </p>
       ) : (
         <>
-          <div className="relative">
+          <div className="relative flex-1 flex flex-col justify-center">
             {hovered && (
               <div
                 className="absolute -top-1 bg-slate-800 text-white text-[11px] rounded-lg px-2.5 py-1.5 pointer-events-none shadow-lg z-10"
@@ -150,15 +202,20 @@ export default function AttendanceTrendChart({ trend, loading }) {
                         />
                       );
                     })}
-                    <text
-                      x={x + barWidth / 2}
-                      y={height - padBottom + 16}
-                      textAnchor="middle"
-                      fontSize="10"
-                      fill="#94A3B8"
-                    >
-                      {dayLabel(row.date)}
-                    </text>
+                    {/* Month view (30 bars) skips every other label — even
+                        at fontSize 9 all 30 would overlap and smear
+                        together — Week view (7 bars) shows every one. */}
+                    {(n <= 10 || idx % 2 === 0) && (
+                      <text
+                        x={x + barWidth / 2}
+                        y={height - padBottom + 16}
+                        textAnchor="middle"
+                        fontSize={n > 10 ? "9" : "10"}
+                        fill="#94A3B8"
+                      >
+                        {n > 10 ? dayLabelShort(row.date) : dayLabel(row.date)}
+                      </text>
+                    )}
                   </g>
                 );
               })}

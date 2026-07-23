@@ -12,10 +12,11 @@ import {
   Users,
   Wallet,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import * as XLSX from "xlsx";
 import PageHeader from "../../components/common/PageHeader";
 import StatCard from "../../components/common/StatCard";
-import { reportsService } from "../../services/reportservice";
+import { reportsService } from "../../services/ReportService";
 
 // ---------------------------------------------------------------------
 // Wired to the real backend: GET /reports/dashboard (counts) and
@@ -163,6 +164,7 @@ const COLUMNS = {
       render: (r) => <StatusPill value={r.employment_status} />,
     },
     { header: "Joined", render: (r) => formatDate(r.joining_date) },
+    { header: "Tenure", render: (r) => r.tenure?.label || "—" },
   ],
   attendance: [
     {
@@ -292,6 +294,13 @@ function searchText(tabKey, row) {
         row.employee_id,
         row.departments?.department_name,
         row.designations?.designation_name,
+        row.phone,
+        row.gender,
+        row.marital_status,
+        row.nationality,
+        row.blood_group,
+        row.religion,
+        row.address,
       ].join(" ");
     case "attendance":
       return [
@@ -343,6 +352,7 @@ function toCsv(tabKey, rows) {
       r.designations?.designation_name || "",
       r.employment_status || "",
       formatDate(r.joining_date),
+      r.tenure?.label || "",
     ],
     attendance: (r) => [
       employeeLabel(r.employees?.full_name, r.employees?.employee_id),
@@ -389,6 +399,235 @@ function toCsv(tabKey, rows) {
   return lines.join("\n");
 }
 
+// Full-detail Employees export (Employees tab "Export" button) — every
+// employee, one row each, with tenure ("how long worked") and every
+// personal-profile field (address/religion/DOB/etc — see
+// sql/017_employee_personal_details.sql) alongside the job details
+// already shown on screen. This is deliberately NOT the same columns as
+// the on-screen table (COLUMNS.employees) — the table stays compact,
+// the export is the "everything" version.
+const EMPLOYEES_EXPORT_HEADER = [
+  "Employee Name",
+  "Employee ID",
+  "Email",
+  "Phone",
+  "Department",
+  "Designation",
+  "Reports To",
+  "Employment Status",
+  "Joining Date",
+  "Tenure (How Long Worked)",
+  "Date of Birth",
+  "Gender",
+  "Marital Status",
+  "Nationality",
+  "Blood Group",
+  "Religion",
+  "Address",
+  "Distinct Sites Worked",
+  "Total Site Visit Hours",
+  "Total Days Recorded",
+  "Present Days",
+  "Absent Days",
+  "Total Working Hours",
+  "Total Break Hours",
+  "Total Overtime Hours",
+];
+
+function employeesExportRow(r) {
+  const summary = r.attendance_summary || {};
+  return [
+    r.full_name || "",
+    r.employee_id || "",
+    r.email || "",
+    r.phone || "",
+    r.departments?.department_name || "",
+    r.designations?.designation_name || "",
+    r.manager
+      ? `${r.manager.full_name || ""}${r.manager.employee_id ? ` (${r.manager.employee_id})` : ""}`
+      : "",
+    r.employment_status || "",
+    formatDate(r.joining_date),
+    r.tenure?.label || "",
+    formatDate(r.date_of_birth),
+    r.gender || "",
+    r.marital_status || "",
+    r.nationality || "",
+    r.blood_group || "",
+    r.religion || "",
+    r.address || "",
+    r.distinct_site_count ?? 0,
+    ((r.total_site_visit_minutes || 0) / 60).toFixed(1),
+    summary.total_days_recorded ?? 0,
+    summary.present_days ?? 0,
+    summary.absent_days ?? 0,
+    ((summary.total_working_minutes || 0) / 60).toFixed(1),
+    ((summary.total_break_minutes || 0) / 60).toFixed(1),
+    ((summary.total_overtime_minutes || 0) / 60).toFixed(1),
+  ];
+}
+
+function downloadEmployeesExcel(rows) {
+  const sheet = XLSX.utils.aoa_to_sheet([
+    EMPLOYEES_EXPORT_HEADER,
+    ...rows.map(employeesExportRow),
+  ]);
+  sheet["!cols"] = EMPLOYEES_EXPORT_HEADER.map((h) => ({
+    wch: Math.max(14, Math.min(28, h.length + 4)),
+  }));
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, sheet, "Employees");
+  XLSX.writeFile(
+    workbook,
+    `employees-report-${new Date().toISOString().slice(0, 10)}.xlsx`,
+  );
+}
+
+// Full-detail Attendance export (Attendance tab "Export" button) —
+// every record currently in view (respects search), one row each.
+const ATTENDANCE_EXPORT_HEADER = [
+  "Employee Name",
+  "Employee ID",
+  "Date",
+  "Check-in",
+  "Check-out",
+  "Working Hours",
+  "Break",
+  "Overtime",
+  "Late (min)",
+  "Status",
+];
+
+function attendanceExportRow(r) {
+  return [
+    r.employees?.full_name || "",
+    r.employees?.employee_id || "",
+    formatDate(r.attendance_date),
+    formatTime(r.check_in_time),
+    formatTime(r.check_out_time),
+    formatMinutes(r.working_minutes),
+    formatMinutes(r.break_minutes),
+    formatMinutes(r.overtime_minutes),
+    r.late_minutes || 0,
+    r.status || "",
+  ];
+}
+
+function downloadAttendanceExcel(rows) {
+  const sheet = XLSX.utils.aoa_to_sheet([
+    ATTENDANCE_EXPORT_HEADER,
+    ...rows.map(attendanceExportRow),
+  ]);
+  sheet["!cols"] = [
+    { wch: 20 },
+    { wch: 14 },
+    { wch: 12 },
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 14 },
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 12 },
+  ];
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, sheet, "Attendance");
+  XLSX.writeFile(
+    workbook,
+    `attendance-report-${new Date().toISOString().slice(0, 10)}.xlsx`,
+  );
+}
+
+// Type-to-search employee picker — replaces the plain <select> on the
+// Attendance tab's "download this employee's monthly attendance"
+// control. Same options/value/onChange shape as a native select would
+// use (options: employeeOptions from GET /reports/employees, value:
+// the chosen employee's id, onChange: (id) => void), just searchable —
+// useful once the roster is more than a handful of names to scroll.
+function EmployeeSearchSelect({ options, value, onChange, placeholder }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef(null);
+
+  const selected = options.find((e) => e.id === value);
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter((e) =>
+      employeeLabel(e.full_name, e.employee_id).toLowerCase().includes(q),
+    );
+  }, [options, query]);
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <div className="relative">
+        <Search
+          size={14}
+          className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+        />
+        <input
+          value={
+            open
+              ? query
+              : selected
+                ? employeeLabel(selected.full_name, selected.employee_id)
+                : ""
+          }
+          onChange={(e) => {
+            setQuery(e.target.value);
+            if (value) onChange("");
+          }}
+          onFocus={() => {
+            setOpen(true);
+            setQuery("");
+          }}
+          placeholder={placeholder || "Search employee..."}
+          className="w-full pl-8 pr-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
+        />
+      </div>
+      {open && (
+        <div className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg">
+          {filtered.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-slate-400">
+              No employees found.
+            </div>
+          ) : (
+            filtered.map((e) => (
+              <button
+                type="button"
+                key={e.id}
+                onClick={() => {
+                  onChange(e.id);
+                  setQuery("");
+                  setOpen(false);
+                }}
+                className={`w-full text-left px-3 py-2 text-sm hover:bg-orange-50 ${
+                  e.id === value
+                    ? "bg-orange-50 text-orange-600 font-medium"
+                    : "text-slate-700"
+                }`}
+              >
+                {employeeLabel(e.full_name, e.employee_id)}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Reports() {
   const [activeTab, setActiveTab] = useState("employees");
   const [search, setSearch] = useState("");
@@ -400,6 +639,31 @@ export default function Reports() {
   const [reportData, setReportData] = useState({});
   const [loadingTabs, setLoadingTabs] = useState({});
   const [errorTabs, setErrorTabs] = useState({});
+
+  // Per-row "download full report" (Employees tab) — tracks which
+  // employee_id is currently being fetched/built so only that row's
+  // button shows a spinner.
+  const [downloadingEmployeeId, setDownloadingEmployeeId] = useState(null);
+
+  // "Download this employee's monthly attendance" (Attendance tab) —
+  // needs the full employee list (for the picker) independent of
+  // whichever tab happens to be open, so it's fetched once on mount
+  // rather than reusing reportData.employees (which only exists once
+  // the Employees tab has actually been opened).
+  const [employeeOptions, setEmployeeOptions] = useState([]);
+  const [monthlyEmployeeId, setMonthlyEmployeeId] = useState("");
+  const [monthlyMonth, setMonthlyMonth] = useState(() =>
+    new Date().toISOString().slice(0, 7),
+  );
+  const [monthlyDownloading, setMonthlyDownloading] = useState(false);
+  const [monthlyError, setMonthlyError] = useState(null);
+
+  useEffect(() => {
+    reportsService
+      .employees()
+      .then((res) => setEmployeeOptions(res?.data ?? []))
+      .catch(() => setEmployeeOptions([]));
+  }, []);
 
   // KPI strip — one summarized count call.
   useEffect(() => {
@@ -462,6 +726,14 @@ export default function Reports() {
   const columns = COLUMNS[activeTab];
 
   function handleExport() {
+    if (activeTab === "employees") {
+      downloadEmployeesExcel(filtered);
+      return;
+    }
+    if (activeTab === "attendance") {
+      downloadAttendanceExcel(filtered);
+      return;
+    }
     const csv = toCsv(activeTab, filtered);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -470,6 +742,170 @@ export default function Reports() {
     a.download = `${activeTab}-report-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  // One employee's full report as a 2-sheet .xlsx: profile + lifetime
+  // attendance totals, and a breakdown of every site they've logged a
+  // visit to (see GET /reports/employees/{id}/full).
+  function downloadEmployeeFullReport(row) {
+    setDownloadingEmployeeId(row.id);
+    reportsService
+      .employeeFull(row.id)
+      .then((res) => {
+        const data = res?.data;
+        if (!data) return;
+        const summary = data.attendance_summary || {};
+
+        const profileRows = [
+          ["Employee Name", data.full_name || ""],
+          ["Employee ID", data.employee_id || ""],
+          ["Email", data.email || ""],
+          ["Phone", data.phone || "—"],
+          ["Department", data.departments?.department_name || "—"],
+          ["Designation", data.designations?.designation_name || "—"],
+          [
+            "Reports To",
+            data.manager_name
+              ? `${data.manager_name}${data.manager_employee_code ? ` (${data.manager_employee_code})` : ""}`
+              : "—",
+          ],
+          ["Employment Status", data.employment_status || "—"],
+          ["Joining Date", formatDate(data.joining_date)],
+          ["Tenure (How Long Worked)", data.tenure?.label || "—"],
+          [],
+          ["Date of Birth", formatDate(data.date_of_birth)],
+          ["Gender", data.gender || "—"],
+          ["Marital Status", data.marital_status || "—"],
+          ["Nationality", data.nationality || "—"],
+          ["Blood Group", data.blood_group || "—"],
+          ["Religion", data.religion || "—"],
+          ["Address", data.address || "—"],
+          [],
+          ["Distinct Sites Worked", data.distinct_site_count ?? 0],
+          [
+            "Total Site Visit Hours",
+            ((data.total_site_visit_minutes || 0) / 60).toFixed(1),
+          ],
+          ["Total Days Recorded", summary.total_days_recorded ?? 0],
+          ["Present Days", summary.present_days ?? 0],
+          ["Absent Days", summary.absent_days ?? 0],
+          [
+            "Total Working Hours",
+            ((summary.total_working_minutes || 0) / 60).toFixed(1),
+          ],
+          [
+            "Total Break Hours",
+            ((summary.total_break_minutes || 0) / 60).toFixed(1),
+          ],
+          [
+            "Total Overtime Hours",
+            ((summary.total_overtime_minutes || 0) / 60).toFixed(1),
+          ],
+        ];
+        const profileSheet = XLSX.utils.aoa_to_sheet(profileRows);
+        profileSheet["!cols"] = [{ wch: 22 }, { wch: 32 }];
+
+        const sitesRows = (data.sites_worked || []).map((s) => [
+          s.location_name,
+          s.visit_count,
+          (s.total_minutes / 60).toFixed(1),
+        ]);
+        const sitesSheet = XLSX.utils.aoa_to_sheet([
+          ["Site", "Visits", "Total Hours"],
+          ...sitesRows,
+        ]);
+        sitesSheet["!cols"] = [{ wch: 24 }, { wch: 10 }, { wch: 12 }];
+
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, profileSheet, "Profile");
+        XLSX.utils.book_append_sheet(workbook, sitesSheet, "Sites Worked");
+        const nameSlug = (data.full_name || "").replace(/[^a-z0-9]+/gi, "-");
+        XLSX.writeFile(
+          workbook,
+          `employee-report-${data.employee_id || row.id}${nameSlug ? `-${nameSlug}` : ""}.xlsx`,
+        );
+      })
+      .catch((err) =>
+        alert(err.message || "Couldn't download this employee's report."),
+      )
+      .finally(() => setDownloadingEmployeeId(null));
+  }
+
+  // One employee's attendance for one calendar month as a single-sheet
+  // .xlsx: every day's record, plus a totals row (working/break/overtime
+  // hours, late minutes, present/half/absent day counts).
+  function downloadMonthlyAttendance() {
+    if (!monthlyEmployeeId || !monthlyMonth) {
+      setMonthlyError("Pick an employee and a month first.");
+      return;
+    }
+    setMonthlyDownloading(true);
+    setMonthlyError(null);
+    reportsService
+      .employeeMonthlyAttendance(monthlyEmployeeId, monthlyMonth)
+      .then((res) => {
+        const data = res?.data;
+        if (!data) return;
+        const summary = data.summary || {};
+
+        const header = [
+          "Date",
+          "Check In",
+          "Check Out",
+          "Working Hours",
+          "Break",
+          "Overtime",
+          "Late (min)",
+          "Status",
+        ];
+        const rows = (data.records || []).map((r) => [
+          formatDate(r.attendance_date),
+          formatTime(r.check_in_time),
+          formatTime(r.check_out_time),
+          formatMinutes(r.working_minutes),
+          formatMinutes(r.break_minutes),
+          formatMinutes(r.overtime_minutes),
+          r.late_minutes || 0,
+          r.status || "",
+        ]);
+        const totalsRow = [
+          "TOTAL",
+          "",
+          "",
+          formatMinutes(summary.total_working_minutes),
+          formatMinutes(summary.total_break_minutes),
+          formatMinutes(summary.total_overtime_minutes),
+          summary.total_late_minutes || 0,
+          `${summary.present_days || 0} present / ${summary.half_days || 0} half / ${summary.absent_days || 0} absent`,
+        ];
+
+        const sheet = XLSX.utils.aoa_to_sheet([header, ...rows, [], totalsRow]);
+        sheet["!cols"] = [
+          { wch: 12 },
+          { wch: 10 },
+          { wch: 10 },
+          { wch: 14 },
+          { wch: 10 },
+          { wch: 10 },
+          { wch: 10 },
+          { wch: 30 },
+        ];
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, sheet, "Monthly Attendance");
+
+        const label = employeeLabel(
+          data.employee?.full_name,
+          data.employee?.employee_id,
+        ).replace(/[^a-z0-9]+/gi, "-");
+        XLSX.writeFile(
+          workbook,
+          `attendance-${label || monthlyEmployeeId}-${monthlyMonth}.xlsx`,
+        );
+      })
+      .catch((err) =>
+        setMonthlyError(err.message || "Couldn't download attendance."),
+      )
+      .finally(() => setMonthlyDownloading(false));
   }
 
   return (
@@ -552,7 +988,52 @@ export default function Reports() {
           })}
         </div>
 
-        {/* Search + export */}
+        {/* Download one employee's monthly attendance — Attendance tab only */}
+        {activeTab === "attendance" && (
+          <div className="flex flex-col sm:flex-row sm:items-end gap-3 p-4 border-b border-slate-100 bg-slate-50/60">
+            <div className="flex-1 max-w-xs">
+              <label className="block text-xs font-medium text-slate-500 mb-1.5">
+                Employee
+              </label>
+              <EmployeeSearchSelect
+                options={employeeOptions}
+                value={monthlyEmployeeId}
+                onChange={setMonthlyEmployeeId}
+                placeholder="Search employee by name or ID..."
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1.5">
+                Month
+              </label>
+              <input
+                type="month"
+                value={monthlyMonth}
+                onChange={(e) => setMonthlyMonth(e.target.value)}
+                className="border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
+              />
+            </div>
+            <button
+              onClick={downloadMonthlyAttendance}
+              disabled={monthlyDownloading || !monthlyEmployeeId}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {monthlyDownloading ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Download size={14} />
+              )}
+              Download Monthly Attendance
+            </button>
+            {monthlyError && (
+              <span className="text-xs text-orange-600 flex items-center gap-1">
+                <AlertTriangle size={13} /> {monthlyError}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Search + export — shown for every tab, including Employees */}
         <div className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 border-b border-slate-100">
           <div className="relative flex-1 max-w-sm">
             <Search
@@ -577,7 +1058,10 @@ export default function Reports() {
               disabled={loading || !!error || filtered.length === 0}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              <Download size={14} /> Export CSV
+              <Download size={14} />
+              {activeTab === "employees" || activeTab === "attendance"
+                ? "Export Excel"
+                : "Export CSV"}
             </button>
           </div>
         </div>
@@ -601,13 +1085,23 @@ export default function Reports() {
                       {c.header}
                     </th>
                   ))}
+                  {activeTab === "employees" && (
+                    <th className="px-4 py-3 font-medium whitespace-nowrap text-right">
+                      Report
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   [...Array(5)].map((_, i) => (
                     <tr key={i} className="border-b border-slate-50">
-                      <td colSpan={columns.length} className="px-4 py-4">
+                      <td
+                        colSpan={
+                          columns.length + (activeTab === "employees" ? 1 : 0)
+                        }
+                        className="px-4 py-4"
+                      >
                         <div className="h-4 bg-slate-100 rounded animate-pulse" />
                       </td>
                     </tr>
@@ -615,7 +1109,9 @@ export default function Reports() {
                 ) : pageItems.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={columns.length}
+                      colSpan={
+                        columns.length + (activeTab === "employees" ? 1 : 0)
+                      }
                       className="px-4 py-12 text-center text-slate-400 text-sm"
                     >
                       No records found.
@@ -632,6 +1128,23 @@ export default function Reports() {
                           {c.render(row)}
                         </td>
                       ))}
+                      {activeTab === "employees" && (
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            onClick={() => downloadEmployeeFullReport(row)}
+                            disabled={downloadingEmployeeId === row.id}
+                            title="Download full report"
+                            className="inline-flex items-center gap-1 text-xs font-medium text-orange-600 hover:text-orange-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            {downloadingEmployeeId === row.id ? (
+                              <Loader2 size={13} className="animate-spin" />
+                            ) : (
+                              <Download size={13} />
+                            )}
+                            Report
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}

@@ -1,6 +1,5 @@
-import React from 'react';
-import PlaceholderPage from '../../components/common/PlaceholderPage';
+import OrganizationLocations from "../shared/OrganizationLocations.jsx";
 
-export default function OrganizationLocations() {
-  return <PlaceholderPage title="Locations" />;
+export default function SuperAdminOrganizationLocations() {
+  return <OrganizationLocations />;
 }

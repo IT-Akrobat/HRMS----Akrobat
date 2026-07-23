@@ -85,7 +85,7 @@ export const ROLE_BASE_PATH = {
 export const ROLE_LABELS = {
   [ROLES.EMPLOYEE]: "Employee",
   [ROLES.MANAGER]: "Manager",
-  [ROLES.HR_ADMIN]: "HR Admin",
+  [ROLES.HR_ADMIN]: "HR",
   [ROLES.SUPER_ADMIN]: "Super Admin",
 };
 
@@ -100,6 +100,12 @@ const BACKEND_ROLE_MAP = {
   MANAGER: ROLES.MANAGER,
   "OPERATIONS MANAGER": ROLES.MANAGER,
   "INSPECTION MANAGER": ROLES.MANAGER,
+  // HR ADMIN + HR EXECUTIVE were consolidated into a single "HR" role
+  // in sql/017_consolidate_hr_role.sql, matching what the backend's
+  // require_role([...]) guards already expected everywhere. The old
+  // names are kept here too so this doesn't break against a database
+  // that hasn't run that migration yet.
+  HR: ROLES.HR_ADMIN,
   "HR ADMIN": ROLES.HR_ADMIN,
   "HR EXECUTIVE": ROLES.HR_ADMIN,
   "SUPER ADMIN": ROLES.SUPER_ADMIN,

@@ -69,6 +69,7 @@ from app.dashboard.services import (
     get_department_distribution,
     get_on_leave_today,
     get_quote_of_day,
+    get_top_performers,
 )
 
 from app.core.security import get_current_user
@@ -120,6 +121,20 @@ def on_leave_today(user=Depends(get_current_user)):
     """
 
     return get_on_leave_today()
+
+
+@router.get("/top-performers")
+def top_performers(
+    days: int = Query(30, ge=7, le=90),
+    limit: int = Query(5, ge=1, le=20),
+    user=Depends(get_current_user),
+):
+    """Top employees by attendance punctuality over the last `days` days,
+    company-wide — same no-extra-permission-gate rationale as the other
+    shared dashboard widgets above (on-leave-today, celebrations).
+    """
+
+    return get_top_performers(days=days, limit=limit)
 
 
 @router.get("/quote-of-day")

@@ -56,14 +56,13 @@ import SystemSettingsConfigurations from "../pages/super-admin/SystemSettingsCon
 import SystemSettingsIntegrations from "../pages/super-admin/SystemSettingsIntegrations.jsx";
 import Users from "../pages/super-admin/Users.jsx";
 import UsersPermissions from "../pages/super-admin/UsersPermissions.jsx";
-import UsersRoles from "../pages/super-admin/UsersRoles.jsx";
 import { commonRoutes } from "./commonRoutes.jsx";
 
 export const superAdminRoutes = [
   { path: "dashboard", element: <Dashboard /> },
   ...commonRoutes,
   { path: "users", element: <Users /> },
-  { path: "users/roles", element: <UsersRoles /> },
+  // { path: "users/roles", element: <UsersRoles /> },
   { path: "users/permissions", element: <UsersPermissions /> },
   {
     path: "organization/company-profile",

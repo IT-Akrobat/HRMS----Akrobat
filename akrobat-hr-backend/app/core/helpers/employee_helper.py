@@ -88,6 +88,40 @@ def validate_reference(
 
 
 # ==========================================
+# RESOLVE DEFAULT SHIFT FROM DESIGNATION
+# ==========================================
+
+
+def resolve_default_shift_id(designation_id: str | None) -> str | None:
+    """
+    "When creating a user, their working hours should be mentioned" —
+    every designation is seeded with a `default_shift_id` (see
+    sql/014_designation_shifts_and_site_visits.sql) matching the real
+    Attendance Info doc (Office / Operation Site / Inspection Site /
+    Work Shop hours). Called by create_employee() ONLY when the caller
+    didn't explicitly pass a shift_id, so HR can still hand-pick a
+    different shift (e.g. the 9-6 Office variant) per employee — this
+    is a suggestion/default, not a hard rule.
+    """
+
+    if not designation_id:
+        return None
+
+    response = (
+        supabase_admin.table("designations")
+        .select("default_shift_id")
+        .eq("id", designation_id)
+        .maybe_single()
+        .execute()
+    )
+
+    if not response or not response.data:
+        return None
+
+    return response.data.get("default_shift_id")
+
+
+# ==========================================
 # GET EMPLOYEE
 # ==========================================
 
@@ -257,6 +291,72 @@ def get_all_report_ids(manager_employee_id: str, max_depth: int = 10) -> list[st
         frontier = new_ids
 
     return list(all_report_ids)
+
+
+# ==========================================
+# FIELD STAFF (multi-site Inspection / Operation employees)
+# ==========================================
+
+
+def get_field_employee_ids() -> set[str]:
+    """
+    Ids of every employee whose designation sits under an
+    INSPECTION*/OPERATION* department — the staff who visit multiple
+    sites in a day and therefore get the Site Visits UI, as opposed to a
+    single fixed office/desk. Derived from department rather than a
+    dedicated boolean column, since department is already the source of
+    truth (see sql/014_designation_shifts_and_site_visits.sql) and the
+    set of "field" departments may grow later without a schema change.
+    Returns an empty set (never raises) — callers treat this as
+    best-effort, same convention as get_employee_ids_for_role().
+    """
+
+    try:
+        dept_response = (
+            supabase_admin.table("departments").select("id, department_name").execute()
+        )
+        field_dept_ids = [
+            d["id"]
+            for d in (dept_response.data or [])
+            if (d.get("department_name") or "")
+            .upper()
+            .startswith(("INSPECTION", "OPERATION"))
+        ]
+
+        if not field_dept_ids:
+            return set()
+
+        desig_response = (
+            supabase_admin.table("designations")
+            .select("id")
+            .in_("department_id", field_dept_ids)
+            .execute()
+        )
+        field_desig_ids = [d["id"] for d in (desig_response.data or [])]
+
+        if not field_desig_ids:
+            return set()
+
+        emp_response = (
+            supabase_admin.table("employees")
+            .select("id")
+            .in_("designation_id", field_desig_ids)
+            .execute()
+        )
+
+        return {e["id"] for e in (emp_response.data or [])}
+
+    except Exception:
+        return set()
+
+
+def is_field_employee(employee_id: str | None) -> bool:
+    """Convenience single-employee check built on get_field_employee_ids()."""
+
+    if not employee_id:
+        return False
+
+    return employee_id in get_field_employee_ids()
 
 
 def get_user_profile(employee_id: str):

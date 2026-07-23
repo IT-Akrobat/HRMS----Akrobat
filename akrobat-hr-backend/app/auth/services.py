@@ -324,6 +324,13 @@ def get_me(auth_user) -> dict:
             employment_status,
             department_id,
             designation_id,
+            date_of_birth,
+            gender,
+            marital_status,
+            nationality,
+            blood_group,
+            religion,
+            address,
 
             departments!employees_department_id_fkey(
                 id,
@@ -376,6 +383,7 @@ def get_me(auth_user) -> dict:
         "redirect_path": role.get("redirect_path") or DEFAULT_REDIRECT_PATH,
         "theme": "light",
         "profile": {
+            "id": employee.get("id"),
             "employee_id": employee.get("employee_id"),
             "full_name": employee.get("full_name"),
             "phone": employee.get("phone"),
@@ -387,6 +395,17 @@ def get_me(auth_user) -> dict:
             ),
             "employment_status": employee.get("employment_status"),
             "designation": designation,
+            "date_of_birth": (
+                str(employee.get("date_of_birth"))
+                if employee.get("date_of_birth")
+                else None
+            ),
+            "gender": employee.get("gender"),
+            "marital_status": employee.get("marital_status"),
+            "nationality": employee.get("nationality"),
+            "blood_group": employee.get("blood_group"),
+            "religion": employee.get("religion"),
+            "address": employee.get("address"),
         },
     }
 

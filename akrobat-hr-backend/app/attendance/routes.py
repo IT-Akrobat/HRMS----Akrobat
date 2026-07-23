@@ -8,6 +8,8 @@ from app.attendance.schemas import (
     RegularizationRequest,
     RegularizationDecisionRequest,
     AdminUpdateAttendanceRequest,
+    SiteVisitArriveRequest,
+    SiteVisitDepartRequest,
 )
 
 from app.attendance.services import (
@@ -22,10 +24,17 @@ from app.attendance.services import (
     get_team_regularizations,
     decide_regularization,
     get_team_attendance,
+    get_team_attendance_report,
     get_all_attendance,
     get_employee_attendance,
     get_attendance_analytics,
     admin_update_attendance,
+    arrive_at_site,
+    depart_site,
+    get_site_visits_for_attendance,
+    get_my_site_visits_today,
+    get_team_site_visits_today,
+    get_employee_site_visits_history,
 )
 
 from app.core.security import get_current_user
@@ -40,12 +49,16 @@ router = APIRouter(prefix="/attendance", tags=["Attendance"])
 
 
 @router.post("/check-in")
-def employee_check_in(data: CheckInRequest, request: Request, user=Depends(get_current_user)):
+def employee_check_in(
+    data: CheckInRequest, request: Request, user=Depends(get_current_user)
+):
     return check_in(user.id, data, request=request)
 
 
 @router.post("/check-out")
-def employee_check_out(data: CheckOutRequest, request: Request, user=Depends(get_current_user)):
+def employee_check_out(
+    data: CheckOutRequest, request: Request, user=Depends(get_current_user)
+):
     return check_out(user.id, data, request=request)
 
 
@@ -57,6 +70,60 @@ def employee_break_start(request: Request, user=Depends(get_current_user)):
 @router.post("/break-end")
 def employee_break_end(request: Request, user=Depends(get_current_user)):
     return end_break(user.id, request=request)
+
+
+# ==========================================
+# SITE VISITS (multi-location field staff — Inspection / Operation)
+# ==========================================
+
+
+@router.post("/site-visit/arrive")
+def site_visit_arrive(
+    data: SiteVisitArriveRequest, request: Request, user=Depends(get_current_user)
+):
+    return arrive_at_site(user.id, data, request=request)
+
+
+@router.post("/site-visit/depart")
+def site_visit_depart(
+    data: SiteVisitDepartRequest, request: Request, user=Depends(get_current_user)
+):
+    return depart_site(user.id, data, request=request)
+
+
+@router.get("/site-visit/today")
+def site_visit_today(user=Depends(get_current_user)):
+    return get_my_site_visits_today(user.id)
+
+
+@router.get("/team/site-visits")
+def team_site_visits_today(user=Depends(require_permission("VIEW_ATTENDANCE"))):
+    """Manager's live view: which of their field-staff reports are on-site right now."""
+    return get_team_site_visits_today(user.id)
+
+
+@router.get("/employee/{employee_id}/site-visits")
+def employee_site_visits_history(
+    employee_id: str,
+    from_date: date | None = Query(None),
+    to_date: date | None = Query(None),
+    user=Depends(get_current_user),
+):
+    return get_employee_site_visits_history(
+        employee_id, auth_user_id=user.id, from_date=from_date, to_date=to_date
+    )
+
+
+# NOTE: registered AFTER /team/site-visits and /employee/{id}/site-visits
+# above — this generic /{attendance_id}/site-visits pattern would otherwise
+# swallow those two routes first (Starlette matches path params against
+# literal segments like "team"/"employee" too, in registration order).
+@router.get("/{attendance_id}/site-visits")
+def site_visits_for_day(
+    attendance_id: str,
+    user=Depends(require_permission("VIEW_ATTENDANCE")),
+):
+    return get_site_visits_for_attendance(attendance_id)
 
 
 # ==========================================
@@ -105,9 +172,13 @@ def decide_regularization_route(
     correction_id: str,
     data: RegularizationDecisionRequest,
     request: Request,
-    user=Depends(require_any_permission(["EDIT_ATTENDANCE", "APPROVE_ATTENDANCE_CORRECTION"])),
+    user=Depends(
+        require_any_permission(["EDIT_ATTENDANCE", "APPROVE_ATTENDANCE_CORRECTION"])
+    ),
 ):
-    return decide_regularization(correction_id, data, auth_user_id=user.id, request=request)
+    return decide_regularization(
+        correction_id, data, auth_user_id=user.id, request=request
+    )
 
 
 # ==========================================
@@ -121,6 +192,15 @@ def team_attendance(
     user=Depends(require_permission("VIEW_ATTENDANCE")),
 ):
     return get_team_attendance(user.id, target_date=target_date)
+
+
+@router.get("/team/report")
+def team_attendance_report(
+    from_date: date = Query(...),
+    to_date: date = Query(...),
+    user=Depends(require_permission("VIEW_ATTENDANCE")),
+):
+    return get_team_attendance_report(user.id, from_date=from_date, to_date=to_date)
 
 
 @router.get("/analytics")
@@ -139,7 +219,9 @@ def employee_attendance(
     limit: int = Query(50, ge=1, le=200),
     user=Depends(get_current_user),
 ):
-    return get_employee_attendance(employee_id, auth_user_id=user.id, page=page, limit=limit)
+    return get_employee_attendance(
+        employee_id, auth_user_id=user.id, page=page, limit=limit
+    )
 
 
 @router.get("/")
@@ -164,4 +246,6 @@ def update_attendance(
     request: Request,
     user=Depends(require_permission("EDIT_ATTENDANCE")),
 ):
-    return admin_update_attendance(attendance_id, data, current_user=user, request=request)
+    return admin_update_attendance(
+        attendance_id, data, current_user=user, request=request
+    )

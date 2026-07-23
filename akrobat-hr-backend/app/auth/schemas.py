@@ -97,6 +97,11 @@ class MeProfile(BaseModel):
     """Employee-facing profile fields. None for accounts with no linked
     employee record (e.g. a Vendor login) rather than erroring out."""
 
+    id: Optional[str] = None  # employees.id (internal UUID) — needed by the
+    # frontend to call employee-scoped endpoints for the logged-in user,
+    # e.g. GET /reports/employees/{id}/full ("My Profile" full report
+    # download). Not to be confused with employee_id, the human-readable
+    # code (e.g. EMP-0042).
     employee_id: Optional[str] = None
     full_name: Optional[str] = None
     phone: Optional[str] = None

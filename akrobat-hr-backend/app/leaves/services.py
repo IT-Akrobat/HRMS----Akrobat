@@ -23,7 +23,7 @@ leave_type_repo = SupabaseRepository("leave_types")
 employee_repo = SupabaseRepository("employees")
 
 LEAVE_SELECT = (
-    "*, employees!leave_requests_employee_id_fkey(full_name, employee_id), "
+    "*, employees!leave_requests_employee_id_fkey(full_name, employee_id, profile_photo), "
     "leave_types(leave_name)"
 )
 

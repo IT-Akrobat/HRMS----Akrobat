@@ -2,27 +2,28 @@ import {
   AlertTriangle,
   ArrowRight,
   Building2,
-  CalendarClock,
-  ClipboardList,
   Clock3,
   LogIn,
   LogOut,
   MapPin,
   Megaphone,
-  Settings2,
   ShieldCheck,
   UserCheck,
   UserPlus,
   Users,
-  UserX,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import AttendanceTrendChart from "../../components/common/AttendanceTrendChart";
+import BirthdaysCard, {
+  OnLeaveTodayCard,
+} from "../../components/common/CelebrationsStrip";
 import CheckInOutCard from "../../components/common/CheckInOutCard";
-import DepartmentDistributionChart from "../../components/common/DepartmentDistributionChart";
+
 import PageHeader from "../../components/common/PageHeader";
+import QuoteOfDayCard from "../../components/common/Quoteofdaycard ";
 import StatCard from "../../components/common/StatCard";
+import TopPerformersCard from "../../components/common/TopPerformanceCard";
 import { apiClient } from "../../services/apiClient";
 
 // -----------------------------------------------------------------------
@@ -80,7 +81,7 @@ function formatMinutes(totalMinutes) {
 // entries (e.g. ATTENDANCE · CHECK_IN) but a plain string for others
 // (e.g. AUTH · LOGIN: "Login: someone@akrobat.com"). This turns either
 // shape into { name, action, time, lat, lon, kind } for display.
-function parseLogEntry(log) {
+function parseLogEntry(log, locations = []) {
   const employeeName = log.employees?.full_name || null;
 
   let details = null;
@@ -118,15 +119,29 @@ function parseLogEntry(log) {
     (typeof log.description === "string" ? log.description : null) ||
     `${log.module} · ${log.action}`;
 
-  // Backend writes check-out messages as "Checked out — 91 min worked,
-  // status: Half Day" — swap the raw minute count for "1h 31m" so total
-  // working hours read naturally in Recent Activity.
-  const minutesMatch = action.match(/(\d+)\s*min worked/i);
-  if (minutesMatch) {
-    action = action.replace(
-      /\d+\s*min worked/i,
-      `${formatMinutes(Number(minutesMatch[1]))} worked`,
-    );
+  // Backend writes several messages as a raw "N min <word>" — "Checked out
+  // — 91 min worked", "Checked in — 87 min late", "Departed site — 105 min
+  // on site". Swap every such count for "1h 31m" etc. so Recent Activity
+  // never shows a bare minute count, however the sentence around it reads.
+  // (The backend now writes these pre-formatted for entries logged after
+  // the fix — this regex is what makes older rows, already saved with the
+  // raw "N min" text, display correctly too, without needing a data
+  // migration.)
+  action = action.replace(/(\d+)\s*min\b/gi, (_, n) =>
+    formatMinutes(Number(n)),
+  );
+
+  // Backend used to write raw location UUIDs into "Arrived at site
+  // <uuid>" (fixed to use the name going forward — see arrive_at_site in
+  // app/attendance/services.py) — but older rows still have the UUID
+  // baked into the description. Swap it for the matching site's name
+  // here so those old rows read correctly too. `locations` may not be
+  // loaded yet on first render; in that case the UUID is left as-is
+  // rather than silently dropped.
+  const uuidMatch = action.match(/^Arrived at site ([0-9a-f-]{36})$/i);
+  if (uuidMatch) {
+    const site = locations.find((loc) => loc.id === uuidMatch[1]);
+    if (site) action = `Arrived at site ${site.location_name}`;
   }
 
   const time =
@@ -193,17 +208,22 @@ function LogIcon({ kind }) {
 // old full-width card at the bottom of the page.
 const QUICK_ACTIONS = [
   { to: "/super-admin/users", label: "Add New User", icon: UserPlus },
-  { to: "/super-admin/users/roles", label: "Manage Roles", icon: Settings2 },
   {
-    to: "/super-admin/security/audit-logs",
-    label: "View Audit Logs",
-    icon: ClipboardList,
+    to: "/super-admin/organization/locations?new=1",
+    label: "New Site",
+    icon: MapPin,
   },
-  {
-    to: "/super-admin/organization/departments",
-    label: "Departments",
-    icon: Building2,
-  },
+  // { to: "/super-admin/users/roles", label: "Manage Roles", icon: Settings2 },
+  // {
+  //   to: "/super-admin/security/audit-logs",
+  //   label: "View Audit Logs",
+  //   icon: ClipboardList,
+  // },
+  // {
+  //   to: "/super-admin/organization/departments",
+  //   label: "Departments",
+  //   icon: Building2,
+  // },
 ];
 
 function QuickActionCircle({ to, label, icon: Icon }) {
@@ -250,6 +270,20 @@ async function reverseGeocode(lat, lon) {
     const data = await res.json();
     const addr = data.address || {};
 
+    // Building name + number, when Nominatim has them (mainly for sites
+    // that sit inside a named building/complex — most residential/street
+    // check-ins won't have either, and that's fine, they just get
+    // dropped below). "building" is the named-building tag; "house_name"
+    // is its fallback on some records; "house_number" is the street
+    // number, shown as "B.No X" to match how site addresses are written
+    // elsewhere in the app (see OrganizationLocations.jsx).
+    const buildingName = addr.building || addr.house_name || null;
+    const buildingNo = addr.house_number ? `B.No ${addr.house_number}` : null;
+    const building =
+      buildingName && buildingNo
+        ? `${buildingName}, ${buildingNo}`
+        : buildingName || buildingNo || null;
+
     // Finest-grained name Nominatim has for this point, tried in
     // descending order of granularity — this is the "area" that was
     // missing before (BigDataCloud rarely resolved it for stored coords).
@@ -265,7 +299,11 @@ async function reverseGeocode(lat, lon) {
     const city =
       addr.city || addr.town || addr.village || addr.municipality || null;
 
-    const parts = [area, city, addr.state || null, addr.country || null]
+    // "Building Name, B.No X, Area, City" — building/number first (most
+    // specific), then area, then city. Falls back gracefully: a check-in
+    // out on a plain street just shows "Area, City" with the building
+    // part dropped, rather than leaving a blank "," in its place.
+    const parts = [building, area, city]
       .filter(Boolean)
       // Drop consecutive duplicates (e.g. area === city for smaller towns).
       .filter((p, i, arr) => p !== arr[i - 1]);
@@ -299,6 +337,9 @@ export default function SuperAdminDashboard() {
 
   const [trend, setTrend] = useState(null);
   const [trendLoading, setTrendLoading] = useState(true);
+  // "week" -> days=7, "month" -> days=30 — both within the backend's
+  // allowed range (Query(..., ge=2, le=30), see app/dashboard/routes.py).
+  const [trendRange, setTrendRange] = useState("week");
 
   const [deptDistribution, setDeptDistribution] = useState([]);
   const [deptLoading, setDeptLoading] = useState(true);
@@ -331,7 +372,7 @@ export default function SuperAdminDashboard() {
         // than per-render — throttled to Nominatim's 1 req/sec limit.
         const uniqueCoords = new Map();
         for (const log of records) {
-          const entry = parseLogEntry(log);
+          const entry = parseLogEntry(log, locations);
           if (entry.lat == null || entry.lon == null) continue;
           const key = placeKey(entry.lat, entry.lon);
           if (!key || uniqueCoords.has(key)) continue;
@@ -369,12 +410,6 @@ export default function SuperAdminDashboard() {
       .catch(() => setAnnouncements([]));
 
     apiClient
-      .get("/dashboard/attendance-trend?days=7")
-      .then((res) => setTrend(res))
-      .catch(() => setTrend(null))
-      .finally(() => setTrendLoading(false));
-
-    apiClient
       .get("/dashboard/department-distribution")
       .then((res) => setDeptDistribution(res.departments || []))
       .catch(() => setDeptDistribution([]))
@@ -388,8 +423,21 @@ export default function SuperAdminDashboard() {
       .catch(() => setLocations([]));
   }, []);
 
+  // Separate effect (rather than folded into the mount effect above) so
+  // toggling the Week/Month control on the Attendance Trend chart just
+  // refetches this one endpoint instead of everything on the page.
+  useEffect(() => {
+    setTrendLoading(true);
+    const days = trendRange === "month" ? 30 : 7;
+    apiClient
+      .get(`/dashboard/attendance-trend?days=${days}`)
+      .then((res) => setTrend(res))
+      .catch(() => setTrend(null))
+      .finally(() => setTrendLoading(false));
+  }, [trendRange]);
+
   return (
-    <div>
+    <div className="overflow-x-hidden">
       {/* Hides the scrollbar visually on the horizontal stat-card row and
           the recent-activity panel, while keeping them scrollable. */}
       <style>{`
@@ -401,17 +449,20 @@ export default function SuperAdminDashboard() {
         title="System Dashboard"
         subtitle="Overview of your system and activity"
         actions={
-          <div className="flex items-center gap-2">
-            {QUICK_ACTIONS.map((action) => (
-              <QuickActionCircle key={action.to} {...action} />
-            ))}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              {QUICK_ACTIONS.map((action) => (
+                <QuickActionCircle key={action.to} {...action} />
+              ))}
+            </div>
+            <QuoteOfDayCard compact />
           </div>
         }
       />
 
-      {/* ---------- Top row: stat cards (75%) + Announcements (25%) ---------- */}
+      {/* ---------- Top row: stat cards (full width) ---------- */}
       <div className="flex gap-4 mb-6 items-stretch">
-        <div className="flex gap-4 overflow-x-auto no-scrollbar pb-1 w-3/4">
+        <div className="flex gap-4 overflow-x-auto no-scrollbar pb-1 w-full">
           <div className="min-w-[170px] w-[170px] shrink-0">
             <StatCard
               icon={Users}
@@ -430,24 +481,7 @@ export default function SuperAdminDashboard() {
               value={stats?.present_today ?? "—"}
             />
           </div>
-          <div className="min-w-[170px] w-[170px] shrink-0">
-            <StatCard
-              icon={UserX}
-              label="Absent Today"
-              color="red"
-              loading={statsLoading}
-              value={stats?.absent_today ?? "—"}
-            />
-          </div>
-          <div className="min-w-[170px] w-[170px] shrink-0">
-            <StatCard
-              icon={CalendarClock}
-              label="On Leave"
-              color="blue"
-              loading={statsLoading}
-              value={stats?.on_leave ?? "—"}
-            />
-          </div>
+
           <div className="min-w-[170px] w-[170px] shrink-0">
             <StatCard
               icon={AlertTriangle}
@@ -485,124 +519,157 @@ export default function SuperAdminDashboard() {
             />
           </div>
         </div>
-
-        {/* ---------- Announcements: remaining ~25% beside the stat row ---------- */}
-        <div className="w-1/4 bg-white rounded-xl border border-slate-200 p-4 flex flex-col">
-          <h3 className="font-semibold text-slate-800 text-sm flex items-center gap-1.5 mb-2">
-            <Megaphone size={15} className="text-orange-500" /> Announcements
-          </h3>
-          {announcements.length === 0 ? (
-            <p className="text-xs text-slate-400">No active announcements.</p>
-          ) : (
-            <div className="space-y-2 overflow-y-auto no-scrollbar flex-1">
-              {announcements.slice(0, 3).map((a) => (
-                <div
-                  key={a.id}
-                  className="bg-orange-50 border border-orange-100 rounded-lg p-2"
-                >
-                  <p className="text-xs font-medium text-slate-800 truncate">
-                    {a.title}
-                  </p>
-                  <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">
-                    {a.description}
-                  </p>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
 
-      {/* ---------- Recent Activity | Today's Attendance ---------- */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* ---------- Recent audit activity: fixed height, hidden scrollbar ---------- */}
-        <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-5 flex flex-col h-[360px]">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-slate-800 flex items-center gap-2">
-              <ShieldCheck size={17} className="text-orange-500" /> Recent
-              Activity
-            </h3>
-            <Link
-              to="/super-admin/security/audit-logs"
-              className="text-xs text-orange-600 font-medium flex items-center gap-1"
-            >
-              View Audit Logs <ArrowRight size={12} />
-            </Link>
-          </div>
+      {/* ---------- Two-column body ----------
+          Left:  Check-in/out -> Recent Activity -> Attendance Trend (+ Dept
+                 Distribution, same "chart" grouping)
+          Right: On Leave Today -> Announcements -> Upcoming Birthdays ->
+                 Top Performance
+      ---------------------------------------------------------------- */}
+      <div className="grid grid-cols-1 lg:grid-cols-[65%_1fr] gap-6 items-start min-w-0">
+        {/* ================= Left column (65%) ================= */}
+        <div className="flex flex-col gap-6 min-w-0">
+          {/* ---------- Check-in/out (Super Admin is a person too) ---------- */}
+          <CheckInOutCard onActivityChange={loadLogs} />
 
-          {logsLoading ? (
-            <div className="space-y-2">
-              {[1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  className="h-10 bg-slate-100 rounded animate-pulse"
-                />
-              ))}
+          {/* ---------- Recent audit activity: fixed height, hidden scrollbar ---------- */}
+          <div className="bg-white rounded-xl border border-slate-200 p-5 flex flex-col h-[360px]">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-slate-800 flex items-center gap-2">
+                <ShieldCheck size={17} className="text-orange-500" /> Recent
+                Activity
+              </h3>
+              <Link
+                to="/super-admin/security/audit-logs"
+                className="text-xs text-orange-600 font-medium flex items-center gap-1"
+              >
+                View Audit Logs <ArrowRight size={12} />
+              </Link>
             </div>
-          ) : logsError ? (
-            <div className="text-sm text-orange-500">
-              Couldn't load recent activity: {logsError}
-            </div>
-          ) : logs.length === 0 ? (
-            <p className="text-sm text-slate-400">No recent activity.</p>
-          ) : (
-            <ul className="divide-y divide-slate-100 overflow-y-auto no-scrollbar flex-1">
-              {logs.map((log) => {
-                const entry = parseLogEntry(log);
-                // Prefer the reverse-geocoded "City, State, Country" (matches
-                // what Today's Attendance shows); fall back to the matched
-                // company office name if geocoding hasn't resolved yet.
-                const geocoded =
-                  entry.lat != null && entry.lon != null
-                    ? placeCache[placeKey(entry.lat, entry.lon)]
-                    : null;
-                const locationName =
-                  geocoded ||
-                  resolveLocationName(entry.lat, entry.lon, locations);
-                return (
-                  <li key={log.id} className="py-2 flex items-start gap-2.5">
-                    <LogIcon kind={entry.kind} />
-                    <div className="min-w-0 flex-1 flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-slate-800 truncate">
-                          {entry.name}
-                        </p>
-                        <p className="text-xs text-slate-500 truncate">
-                          {entry.action}
-                        </p>
-                        {locationName && (
-                          <p className="text-[11px] text-slate-400 flex items-center gap-0.5 truncate">
-                            <MapPin size={9} className="shrink-0" />{" "}
-                            {locationName}
+
+            {logsLoading ? (
+              <div className="space-y-2">
+                {[1, 2, 3].map((i) => (
+                  <div
+                    key={i}
+                    className="h-10 bg-slate-100 rounded animate-pulse"
+                  />
+                ))}
+              </div>
+            ) : logsError ? (
+              <div className="text-sm text-orange-500">
+                Couldn't load recent activity: {logsError}
+              </div>
+            ) : logs.length === 0 ? (
+              <p className="text-sm text-slate-400">No recent activity.</p>
+            ) : (
+              <ul className="divide-y divide-slate-100 overflow-y-auto no-scrollbar flex-1">
+                {logs.map((log) => {
+                  const entry = parseLogEntry(log, locations);
+                  // Prefer the reverse-geocoded "City, State, Country"
+                  // (matches what Today's Attendance shows); fall back to
+                  // the matched company office name if geocoding hasn't
+                  // resolved yet.
+                  const geocoded =
+                    entry.lat != null && entry.lon != null
+                      ? placeCache[placeKey(entry.lat, entry.lon)]
+                      : null;
+                  const locationName =
+                    geocoded ||
+                    resolveLocationName(entry.lat, entry.lon, locations);
+                  return (
+                    <li key={log.id} className="py-2 flex items-start gap-2.5">
+                      <LogIcon kind={entry.kind} />
+                      <div className="min-w-0 flex-1 flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-slate-800 truncate">
+                            {entry.name}
                           </p>
+                          <p className="text-xs text-slate-500 truncate">
+                            {entry.action}
+                          </p>
+                          {locationName && (
+                            <p className="text-[11px] text-slate-400 flex items-center gap-0.5 truncate">
+                              <MapPin size={9} className="shrink-0" />{" "}
+                              {locationName}
+                            </p>
+                          )}
+                        </div>
+                        {entry.time && (
+                          <span className="text-xs text-slate-400 whitespace-nowrap">
+                            {formatTime(entry.time)}
+                          </span>
                         )}
                       </div>
-                      {entry.time && (
-                        <span className="text-xs text-slate-400 whitespace-nowrap">
-                          {formatTime(entry.time)}
-                        </span>
-                      )}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+
+          {/* ---------- Attendance Trend chart ---------- */}
+          <AttendanceTrendChart
+            trend={trend}
+            loading={trendLoading}
+            range={trendRange}
+            onRangeChange={setTrendRange}
+          />
+
+          {/* ---------- Department Distribution chart ---------- */}
+          {/* <DepartmentDistributionChart
+            departments={deptDistribution}
+            loading={deptLoading}
+          /> */}
         </div>
 
-        {/* ---------- Check-in/out (Super Admin is a person too) ---------- */}
-        <CheckInOutCard onActivityChange={loadLogs} />
-      </div>
+        {/* ================= Right column (35%) =================
+            Fixed height + its own vertical scroll, so this column never
+            grows taller than the viewport / left column — it scrolls
+            independently instead of pushing the page down. */}
+        <div className="flex flex-col gap-6 min-w-0 lg:h-[calc(100vh-6rem)] lg:sticky lg:top-4 lg:overflow-y-auto lg:pr-1 no-scrollbar">
+          {/* ---------- On Leave Today ---------- */}
+          <div className="h-72">
+            <OnLeaveTodayCard />
+          </div>
 
-      {/* ---------- Charts ---------- */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
-        <div className="lg:col-span-2">
-          <AttendanceTrendChart trend={trend} loading={trendLoading} />
+          {/* ---------- Announcements ---------- */}
+          <div className="bg-white rounded-xl border border-slate-200 p-5 h-72 flex flex-col">
+            <h3 className="font-semibold text-slate-800 flex items-center gap-2 mb-3">
+              <Megaphone size={17} className="text-orange-500" /> Announcements
+            </h3>
+            {announcements.length === 0 ? (
+              <p className="text-sm text-slate-400">No active announcements.</p>
+            ) : (
+              <div className="space-y-2 overflow-y-auto no-scrollbar flex-1">
+                {announcements.slice(0, 3).map((a) => (
+                  <div
+                    key={a.id}
+                    className="bg-orange-50 border border-orange-100 rounded-lg p-2.5"
+                  >
+                    <p className="text-sm font-medium text-slate-800 truncate">
+                      {a.title}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">
+                      {a.description}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* ---------- Upcoming Birthdays ---------- */}
+          <div className="h-72">
+            <BirthdaysCard />
+          </div>
+
+          {/* ---------- Top Performance ---------- */}
+          <div className="h-72">
+            <TopPerformersCard />
+          </div>
         </div>
-        <DepartmentDistributionChart
-          departments={deptDistribution}
-          loading={deptLoading}
-        />
       </div>
 
       {/* ---------- Floating round "Add Employee" button ---------- */}

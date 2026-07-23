@@ -165,6 +165,40 @@ class EmployeeCreate(BaseModel):
 # ==========================================
 
 
+# ==========================================
+# Self-Update Personal Details ("My Profile")
+# ==========================================
+# Deliberately a SEPARATE, narrower model from EmployeeUpdate — this is
+# what PUT /employees/me accepts, and it must never include job/role
+# fields (department_id, designation_id, manager_id, employment_status,
+# etc.). Any employee can call that endpoint for their OWN record with
+# no special permission, so if this model included those fields, every
+# employee could promote/reassign themselves. Personal-detail-only, by
+# construction, not by convention.
+
+
+class EmployeeSelfUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    phone: Optional[str] = Field(default=None, max_length=20)
+
+    date_of_birth: Optional[date] = None
+    gender: Optional[str] = Field(default=None, max_length=20)
+    marital_status: Optional[str] = Field(default=None, max_length=20)
+    nationality: Optional[str] = Field(default=None, max_length=100)
+    blood_group: Optional[str] = Field(default=None, max_length=5)
+    religion: Optional[str] = Field(default=None, max_length=100)
+    address: Optional[str] = Field(default=None, max_length=500)
+
+    # Profile photo (base64 data URL, resized/compressed client-side).
+    # Without this field, PUT /employees/me silently dropped it (extra
+    # fields are forbidden), which is why the photo only ever lived in
+    # localStorage on the device that uploaded it and never showed up
+    # anywhere else the employee record is displayed (dashboards, team
+    # views, other employees' screens, etc).
+    profile_photo: Optional[str] = None
+
+
 class EmployeeUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

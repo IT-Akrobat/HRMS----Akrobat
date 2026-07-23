@@ -25,6 +25,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import PageHeader from "../../components/common/PageHeader";
 import StatCard from "../../components/common/StatCard";
 import { apiClient } from "../../services/apiClient";
+import { filterShiftsForSelection } from "../../utils/shiftMapping";
 
 // ---------------------------------------------------------------------
 // Master account list across EVERY role (Super Admin, HR Admin, HR
@@ -123,6 +124,22 @@ function avatarColor(seed) {
   for (let i = 0; i < seed.length; i++)
     hash = (hash + seed.charCodeAt(i)) % AVATAR_COLORS.length;
   return AVATAR_COLORS[hash];
+}
+
+function Avatar({ person, className }) {
+  return person?.profile_photo ? (
+    <img
+      src={person.profile_photo}
+      alt={person.full_name}
+      className={`${className} object-cover shrink-0`}
+    />
+  ) : (
+    <div
+      className={`${className} flex items-center justify-center font-semibold shrink-0 ${avatarColor(person?.full_name)}`}
+    >
+      {initials(person?.full_name)}
+    </div>
+  );
 }
 
 function Field({ label, required, error, children }) {
@@ -255,6 +272,67 @@ function UserFormModal({ mode, user, refData, onClose, onSaved }) {
   function set(key, value) {
     setForm((f) => ({ ...f, [key]: value }));
   }
+
+  // Designations belong to exactly one department (designations.department_id),
+  // so once a department is picked, only show designations under it.
+  const filteredDesignations = useMemo(() => {
+    if (!form.department_id) return designations;
+    return designations.filter((d) => d.department_id === form.department_id);
+  }, [designations, form.department_id]);
+
+  // Each designation carries its own default "timing" (designations.default_shift_id,
+  // joined back as `shifts` by GET /designations/) — that's the shift a new hire in
+  // that designation should default to.
+  const selectedDesignation = useMemo(
+    () => designations.find((d) => d.id === form.designation_id),
+    [designations, form.designation_id],
+  );
+
+  // Shifts aren't tagged with a department in the schema, but every
+  // designation has exactly one fixed timing per department (see
+  // src/utils/shiftMapping.js) — so the Shift dropdown is filtered down
+  // to just that one option, e.g. picking INSPECTION only shows
+  // Inspection Site's timing, not Office/Work Shop/Operation Site.
+  const filteredShifts = useMemo(() => {
+    const dept = departments.find((d) => d.id === form.department_id);
+    return filterShiftsForSelection(
+      shifts,
+      dept?.department_name,
+      selectedDesignation?.designation_name,
+    );
+  }, [shifts, departments, form.department_id, selectedDesignation]);
+
+  // If the currently-picked designation no longer belongs to the newly-picked
+  // department, clear it (and its shift) rather than leaving a stale mismatch.
+  const didMountDept = useRef(false);
+  useEffect(() => {
+    if (!didMountDept.current) {
+      didMountDept.current = true;
+      return;
+    }
+    setForm((f) => {
+      const stillValid =
+        !f.designation_id ||
+        designations.some(
+          (d) =>
+            d.id === f.designation_id && d.department_id === f.department_id,
+        );
+      return stillValid ? f : { ...f, designation_id: "", shift_id: "" };
+    });
+  }, [form.department_id, designations]);
+
+  // Auto-fill the shift/timing from the designation's own default whenever the
+  // designation changes (HR can still override it via the Shift dropdown).
+  const didMountDesig = useRef(false);
+  useEffect(() => {
+    if (!didMountDesig.current) {
+      didMountDesig.current = true;
+      return;
+    }
+    if (selectedDesignation?.shifts?.id) {
+      setForm((f) => ({ ...f, shift_id: selectedDesignation.shifts.id }));
+    }
+  }, [form.designation_id]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -462,10 +540,14 @@ function UserFormModal({ mode, user, refData, onClose, onSaved }) {
               <Field label="Designation">
                 <FilterDropdown
                   fullWidth
-                  allLabel="Select designation"
+                  allLabel={
+                    form.department_id
+                      ? "Select designation"
+                      : "Select department first"
+                  }
                   value={form.designation_id}
                   onChange={(v) => set("designation_id", v)}
-                  options={designations}
+                  options={filteredDesignations}
                   getKey={(d) => d.id}
                   getLabel={(d) => d.designation_name}
                 />
@@ -484,13 +566,23 @@ function UserFormModal({ mode, user, refData, onClose, onSaved }) {
               <Field label="Shift">
                 <FilterDropdown
                   fullWidth
-                  allLabel="Select shift"
+                  allLabel={
+                    form.department_id
+                      ? "Select shift"
+                      : "Select department first"
+                  }
                   value={form.shift_id}
                   onChange={(v) => set("shift_id", v)}
-                  options={shifts}
+                  options={filteredShifts}
                   getKey={(s) => s.id}
                   getLabel={(s) => s.shift_name}
                 />
+                {selectedDesignation?.shifts && (
+                  <span className="text-xs text-slate-400 mt-1 block">
+                    Auto-set to {selectedDesignation.shifts.shift_name}'s timing
+                    for this designation.
+                  </span>
+                )}
               </Field>
               <Field label="Joining Date">
                 <input
@@ -585,11 +677,7 @@ function UserViewModal({ user, users, onClose, onEdit }) {
       >
         <div className="px-6 py-5 border-b border-slate-100 flex items-start justify-between shrink-0">
           <div className="flex items-center gap-3 min-w-0">
-            <div
-              className={`w-12 h-12 rounded-full flex items-center justify-center font-semibold shrink-0 ${avatarColor(user.full_name)}`}
-            >
-              {initials(user.full_name)}
-            </div>
+            <Avatar person={user} className="w-12 h-12 rounded-full" />
             <div className="min-w-0">
               <h2 className="text-base font-bold text-slate-800 truncate">
                 {user.full_name}
@@ -1037,11 +1125,10 @@ export default function Users() {
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <div
-                          className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${avatarColor(u.full_name)}`}
-                        >
-                          {initials(u.full_name)}
-                        </div>
+                        <Avatar
+                          person={u}
+                          className="w-9 h-9 rounded-full text-xs"
+                        />
                         <div className="min-w-0">
                           <div className="font-medium text-slate-800 truncate">
                             {u.full_name}

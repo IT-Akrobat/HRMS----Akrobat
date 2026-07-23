@@ -4,9 +4,11 @@ from fastapi import APIRouter, Body, Depends, Query, Request
 
 from app.core.rbac import require_permission
 from app.core.permissions import require_role
+from app.core.security import get_current_user
 
 from app.employees.schemas import (
     EmployeeCreate,
+    EmployeeSelfUpdate,
     EmployeeUpdate,
 )
 
@@ -16,7 +18,9 @@ from app.employees.services import (
     create_employee,
     get_employees,
     update_employee,
+    update_my_profile,
     delete_employee,
+    get_my_team_employees,
 )
 
 router = APIRouter(
@@ -73,6 +77,44 @@ def get_employees_route(
         designation_id=designation_id,
         role_id=role_id,
     )
+
+
+# ==========================================
+# GET MY TEAM (Manager — direct + indirect reports only)
+# ==========================================
+#
+# Unlike GET /employees/ (org-wide, gated only by the data-driven
+# VIEW_EMPLOYEE permission that MANAGER also holds), this scopes the
+# result to exactly the calling manager's own reporting line — same
+# convention as GET /leaves/team and GET /attendance/team. Any signed-in
+# user can call it; if they have no reports, they just get an empty list.
+
+
+@router.get("/my-team")
+def get_my_team_route(user=Depends(get_current_user)):
+    return get_my_team_employees(user.id)
+
+
+# ==========================================
+# UPDATE MY OWN PERSONAL DETAILS ("My Profile")
+# ==========================================
+#
+# Self-service: any signed-in user, no EDIT_EMPLOYEE permission needed --
+# but EmployeeSelfUpdate only accepts phone + personal-detail fields
+# (date_of_birth, gender, marital_status, nationality, blood_group,
+# religion, address), never job/role fields. Declared ABOVE
+# PUT /{employee_id} on purpose: FastAPI matches routes in declaration
+# order, and "/me" would otherwise be swallowed by "/{employee_id}"
+# with employee_id="me".
+
+
+@router.put("/me")
+def update_my_profile_route(
+    data: EmployeeSelfUpdate,
+    request: Request,
+    user=Depends(get_current_user),
+):
+    return update_my_profile(auth_user_id=user.id, data=data, request=request)
 
 
 # ==========================================

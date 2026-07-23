@@ -39,6 +39,7 @@ import AttendanceReports from "../pages/manager/AttendanceReports.jsx";
 import Dashboard from "../pages/manager/Dashboard.jsx";
 import LeaveHistory from "../pages/manager/LeaveHistory.jsx";
 import LeavePending from "../pages/manager/LeavePending.jsx";
+import OrganizationLocations from "../pages/manager/OrganizationLocations.jsx";
 import Projects from "../pages/manager/Projects.jsx";
 import ProjectsAssignTasks from "../pages/manager/ProjectsAssignTasks.jsx";
 import ProjectsProgress from "../pages/manager/ProjectsProgress.jsx";
@@ -53,6 +54,7 @@ export const managerRoutes = [
   ...commonRoutes,
   { path: "team/members", element: <TeamMembers /> },
   { path: "team/employee-details", element: <TeamEmployeeDetails /> },
+  { path: "team/locations", element: <OrganizationLocations /> },
   { path: "attendance", element: <Attendance /> },
   { path: "attendance/reports", element: <AttendanceReports /> },
   { path: "leave/pending", element: <LeavePending /> },

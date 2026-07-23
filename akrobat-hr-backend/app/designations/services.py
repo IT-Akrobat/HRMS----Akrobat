@@ -15,6 +15,7 @@ def create_designation(data):
                 {
                     "designation_name": data.designation_name,
                     "department_id": data.department_id,
+                    "default_shift_id": data.default_shift_id,
                 }
             )
             .execute()
@@ -38,6 +39,13 @@ def get_designations(designation_id: str | None = None):
             *,
             departments(
                 department_name
+            ),
+            shifts:default_shift_id(
+                id,
+                shift_name,
+                start_time,
+                end_time,
+                working_hours
             )
             """)
 

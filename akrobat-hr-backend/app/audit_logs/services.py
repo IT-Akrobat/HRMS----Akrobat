@@ -11,7 +11,7 @@ from app.core.audit import record_audit_log
 
 audit_log_repo = SupabaseRepository("audit_logs")
 
-AUDIT_LOG_SELECT = "*, employees(full_name, employee_id)"
+AUDIT_LOG_SELECT = "*, employees(full_name, employee_id, profile_photo)"
 
 
 # ==========================================

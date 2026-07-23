@@ -322,6 +322,10 @@ from app.core.helpers.employee_helper import (
     check_email_exists,
     validate_reference,
     get_employee_or_404,
+    resolve_default_shift_id,
+    get_employee_id_for_auth_user,
+    get_all_report_ids,
+    is_field_employee,
 )
 from app.core.audit import record_audit_log
 
@@ -398,6 +402,18 @@ def create_employee(data, current_user=None, request: Optional[Request] = None):
         validate_reference("roles", data.role_id, "Role")
         validate_reference("employees", data.manager_id, "Manager")
 
+        # Working hours must be set at creation time. If HR didn't pick a
+        # shift explicitly, fall back to the designation's default_shift_id
+        # (Office / Operation Site / Inspection Site / Work Shop hours,
+        # seeded from the Attendance Info doc — see
+        # sql/014_designation_shifts_and_site_visits.sql). This is what
+        # drives every later late/overtime/working-hours calculation in
+        # app/attendance/services.py, so a shift must be resolved here,
+        # not left for the employee's first check-in to discover it's null.
+        resolved_shift_id = str(data.shift_id) if data.shift_id else None
+        if not resolved_shift_id and data.designation_id:
+            resolved_shift_id = resolve_default_shift_id(str(data.designation_id))
+
         auth_user = supabase_admin.auth.admin.create_user(
             {
                 "email": data.email,
@@ -427,7 +443,7 @@ def create_employee(data, current_user=None, request: Optional[Request] = None):
                 ),
                 "employment_status": data.employment_status,
                 "work_location": data.work_location,
-                "shift_id": str(data.shift_id) if data.shift_id else None,
+                "shift_id": resolved_shift_id,
                 "profile_photo": data.profile_photo,
             }
         )
@@ -540,6 +556,30 @@ def update_employee(
 
         updated_employee = employee_repo.update(employee_id, update_data)
 
+        # If this update touched the department, re-check field-employee
+        # status against the NEW department. Site assignment (and the
+        # site check-in banner it drives) is only ever meant to apply to
+        # Inspection/Operation field staff — see
+        # app/site_assignments/services.py::_require_field_employee, which
+        # blocks *creating* a new assignment for anyone else. But moving
+        # an employee OUT of Inspection/Operation doesn't retroactively
+        # touch any assignment they already had, so without this they'd
+        # keep seeing "Your manager assigned you to <site>" on the office
+        # check-in screen even after becoming office staff. Deactivating
+        # here (not deleting, so the history/audit trail is preserved)
+        # keeps the office check-in flow from ever mixing with stale site
+        # data.
+        if "department_id" in update_data and not is_field_employee(employee_id):
+            try:
+                supabase_admin.table("employee_site_assignments").update(
+                    {"is_active": False}
+                ).eq("employee_id", employee_id).eq("is_active", True).execute()
+            except Exception as e:
+                logger.error(
+                    f"Failed to clear stale site assignment(s) for "
+                    f"{employee_id} after department change: {e}"
+                )
+
         record_audit_log(
             module="EMPLOYEE",
             action="UPDATE",
@@ -563,6 +603,64 @@ def update_employee(
     except Exception as e:
         logger.exception(e)
         internal_server_error("Unable to update employee.")
+
+
+# ==========================================
+# UPDATE MY OWN PERSONAL DETAILS ("My Profile")
+# ==========================================
+# Self-service counterpart to update_employee(): any signed-in user can
+# call this for their OWN record (no EDIT_EMPLOYEE permission needed),
+# but only with the narrow EmployeeSelfUpdate fields (phone + personal
+# details) -- never job/role fields. Backs the My Profile page's
+# "Edit Profile" popup, replacing what used to be saved to
+# localStorage only (date_of_birth, gender, marital_status,
+# nationality, blood_group, religion, address).
+
+
+def update_my_profile(auth_user_id: str, data, request: Optional[Request] = None):
+    try:
+        employee_id = get_employee_id_for_auth_user(auth_user_id)
+
+        if not employee_id:
+            conflict("No employee record is linked to this account.")
+
+        existing_employee = get_employee_or_404(employee_id)
+
+        update_data = data.model_dump(exclude_unset=True)
+
+        if "date_of_birth" in update_data and update_data["date_of_birth"] is not None:
+            update_data["date_of_birth"] = str(update_data["date_of_birth"])
+
+        if not update_data:
+            return success_response(
+                message="Nothing to update.", data=existing_employee
+            )
+
+        updated_employee = employee_repo.update(employee_id, update_data)
+
+        record_audit_log(
+            module="EMPLOYEE",
+            action="UPDATE",
+            performed_by=auth_user_id,
+            target_employee_id=employee_id,
+            record_id=employee_id,
+            description=f"{updated_employee['full_name']} updated their own profile",
+            old_values=existing_employee,
+            new_values=updated_employee,
+            request=request,
+        )
+
+        return success_response(
+            message="Profile updated successfully.",
+            data=updated_employee,
+        )
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        logger.exception(e)
+        internal_server_error("Unable to update your profile.")
 
 
 # ==========================================
@@ -617,3 +715,47 @@ def delete_employee(
     except Exception as e:
         logger.exception(e)
         internal_server_error("Unable to delete employee.")
+
+
+# ==========================================
+# GET MY TEAM (Manager — direct + indirect reports only)
+# ==========================================
+#
+# Same "manager scope" pattern as get_team_leaves() in app/leaves/services.py
+# and get_team_attendance() in app/attendance/services.py: resolve the
+# caller's own employee_id, walk the org chart down via get_all_report_ids(),
+# then fetch full employee records (with department/designation/shift
+# embeds, same shape as GET /employees/) for exactly that set — nothing
+# outside the caller's own reporting line is ever returned.
+
+
+def get_my_team_employees(auth_user_id: str):
+    try:
+        manager_employee_id = get_employee_id_for_auth_user(auth_user_id)
+
+        if not manager_employee_id:
+            return success_response(message="Team fetched successfully.", data=[])
+
+        report_ids = get_all_report_ids(manager_employee_id)
+
+        if not report_ids:
+            return success_response(message="Team fetched successfully.", data=[])
+
+        response = (
+            supabase_admin.table("employees")
+            .select(EMPLOYEE_LIST_SELECT)
+            .in_("id", report_ids)
+            .order("full_name")
+            .execute()
+        )
+
+        return success_response(
+            message="Team fetched successfully.", data=response.data or []
+        )
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        logger.exception(e)
+        internal_server_error("Unable to fetch team.")

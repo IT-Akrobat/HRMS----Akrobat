@@ -509,8 +509,11 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import CheckInOutCard from "../../components/common/CheckInOutCard";
 import PageHeader from "../../components/common/PageHeader";
+import SiteVisitCard from "../../components/common/SiteVisitCard";
+import { useAuth } from "../../context/AuthContext";
 import { apiClient } from "../../services/apiClient";
 import { toLocalISODate } from "../../utils/date";
+import { isFieldEmployee } from "../../utils/employeeType";
 // ---------------------------------------------------------------------
 // Same GET /attendance/timeline/{date} + check-in/break-start/break-end/
 // check-out endpoints used by CheckInOutCard.jsx — reimplemented here
@@ -595,6 +598,9 @@ function formatShortDate(dateStr) {
 }
 
 export default function Attendance() {
+  const { user } = useAuth();
+  const isFieldStaff = isFieldEmployee(user);
+
   // The date currently shown in the "Summary" / "Timeline" panels below —
   // defaults to today, but changes when a calendar day is clicked.
   const [selectedDate, setSelectedDate] = useState(todayIso());
@@ -726,7 +732,9 @@ export default function Attendance() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+      <div
+        className={`grid grid-cols-1 ${isFieldStaff ? "lg:grid-cols-3" : "lg:grid-cols-2"} gap-6 mb-6`}
+      >
         {/* ---------- Today's Status ---------- */}
 
         {/* CheckInOutCard keeps its own "today" state for the check-in/out
@@ -745,6 +753,18 @@ export default function Attendance() {
             loadMonth(monthCursor);
           }}
         />
+
+        {/* Only for Inspection/Operation field staff — office employees
+            have one fixed workplace, so a "which site am I at" card isn't
+            relevant and the page reverts to the plain 2-column layout
+            above instead of leaving an empty third slot. */}
+        {isFieldStaff && isViewingToday && (
+          <SiteVisitCard
+            checkedIn={checkedIn}
+            checkedOut={checkedOut}
+            onActivityChange={() => loadDay(todayIso())}
+          />
+        )}
 
         {/* ---------- Attendance Calendar ---------- */}
         <div className="bg-white rounded-xl border border-slate-200 p-5">
@@ -845,7 +865,13 @@ export default function Attendance() {
             </span>
           </div>
         </div>
+      </div>
 
+      {/* ---------- Summary + Timeline + Shift & Location — always 3
+          cards, so this row is a plain 3-column grid on its own (rather
+          than 4 cards squeezed into the status grid above) and never
+          leaves an empty cell when it wraps. ---------- */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* ---------- Summary (today, or whichever date is selected) ---------- */}
         <div className="bg-white rounded-xl border border-slate-200 p-5">
           <div className="flex items-center justify-between mb-4">
@@ -996,9 +1022,7 @@ export default function Attendance() {
             </>
           )}
         </div>
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* ---------- Timeline (today, or whichever date is selected) ---------- */}
         <div className="bg-white rounded-xl border border-slate-200 p-5">
           <div className="flex items-center justify-between mb-4">

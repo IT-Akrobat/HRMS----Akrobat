@@ -57,8 +57,8 @@ import Dashboard from "../pages/hr-admin/Dashboard.jsx";
 import Documents from "../pages/hr-admin/Documents.jsx";
 import DocumentsTemplates from "../pages/hr-admin/DocumentsTemplates.jsx";
 import Employees from "../pages/hr-admin/Employees.jsx";
-import EmployeesAdd from "../pages/hr-admin/EmployeesAdd.jsx";
-import EmployeesProfile from "../pages/hr-admin/EmployeesProfile.jsx";
+// import EmployeesAdd from "../pages/hr-admin/EmployeesAdd.jsx";
+// import EmployeesProfile from "../pages/hr-admin/EmployeesProfile.jsx";
 import LeaveBalance from "../pages/hr-admin/LeaveBalance.jsx";
 import LeavePolicies from "../pages/hr-admin/LeavePolicies.jsx";
 import LeaveRequests from "../pages/hr-admin/LeaveRequests.jsx";
@@ -76,8 +76,8 @@ export const hrAdminRoutes = [
   { path: "dashboard", element: <Dashboard /> },
   ...commonRoutes,
   { path: "employees", element: <Employees /> },
-  { path: "employees/add", element: <EmployeesAdd /> },
-  { path: "employees/profile", element: <EmployeesProfile /> },
+  // { path: "employees/add", element: <EmployeesAdd /> },
+  // { path: "employees/profile", element: <EmployeesProfile /> },
   { path: "organization/departments", element: <OrganizationDepartments /> },
   { path: "organization/designations", element: <OrganizationDesignations /> },
   { path: "organization/locations", element: <OrganizationLocations /> },
